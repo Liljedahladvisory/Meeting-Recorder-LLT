@@ -400,11 +400,12 @@ class MeetingRecorder(tk.Tk):
 
     def _preload_whisper(self):
         size = self.whisper_size.get()
+        self.after(0, lambda: self.rec_btn.config(state="disabled"))
         try:
             from faster_whisper import WhisperModel
             from pyannote.audio import Pipeline
             self._log(f"Förladdar Whisper {size} i bakgrunden…")
-            self.after(0, lambda: self._set_status(f"Laddar Whisper {size}…"))
+            self.after(0, lambda: self._set_status(f"Laddar Whisper {size}…  (knappen aktiveras när den är klar)"))
             self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
             self._loaded_whisper_size = size
             self._log("Whisper redo. Laddar talarseparation…")
@@ -424,6 +425,8 @@ class MeetingRecorder(tk.Tk):
             self._log(f"Förladdningsfel: {e}")
             self._log(traceback.format_exc())
             self.after(0, lambda: self._set_status("Redo (whisper ej förladdad)"))
+        finally:
+            self.after(0, lambda: self.rec_btn.config(state="normal"))
 
     def _load_whisper(self):
         size = self.whisper_size.get()
