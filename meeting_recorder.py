@@ -265,12 +265,12 @@ class MeetingRecorder(tk.Tk):
         btn_frame = tk.Frame(self, bg=BG, padx=28, pady=16)
         btn_frame.pack(fill="x")
 
-        self.rec_btn = tk.Button(btn_frame, text="●  Starta inspelning",
-                                 font=("Helvetica Neue", 12, "bold"),
-                                 bg=FG, fg=BG, relief="flat", bd=0,
-                                 padx=28, pady=11, cursor="hand2",
-                                 activebackground=FG3, activeforeground=BG,
-                                 command=self._toggle_recording)
+        # Use Label instead of Button so macOS Aqua theme doesn't override bg colour
+        self._rec_btn_enabled = True
+        self.rec_btn = tk.Label(btn_frame, text="●  Starta inspelning",
+                                font=("Helvetica Neue", 12, "bold"),
+                                bg=FG, fg=BG, padx=28, pady=11, cursor="hand2")
+        self.rec_btn.bind("<Button-1>", self._on_rec_btn_click)
         self.rec_btn.pack(side="left", padx=(0, 10))
 
         self.notes_btn = tk.Button(btn_frame, text="◆  Generera anteckningar",
@@ -400,7 +400,7 @@ class MeetingRecorder(tk.Tk):
 
     def _preload_whisper(self):
         size = self.whisper_size.get()
-        self.after(0, lambda: self.rec_btn.config(state="disabled"))
+        self.after(0, lambda: self._set_rec_btn_enabled(False))
         try:
             from faster_whisper import WhisperModel
             from pyannote.audio import Pipeline
@@ -426,7 +426,7 @@ class MeetingRecorder(tk.Tk):
             self._log(traceback.format_exc())
             self.after(0, lambda: self._set_status("Redo (whisper ej förladdad)"))
         finally:
-            self.after(0, lambda: self.rec_btn.config(state="normal"))
+            self.after(0, lambda: self._set_rec_btn_enabled(True))
 
     def _load_whisper(self):
         size = self.whisper_size.get()
@@ -442,6 +442,14 @@ class MeetingRecorder(tk.Tk):
             self.after(0, lambda: messagebox.showerror("Whisper-fel", str(e)))
 
     # ── Recording flow ────────────────────────────────────────────────────────
+
+    def _on_rec_btn_click(self, _=None):
+        if self._rec_btn_enabled:
+            self._toggle_recording()
+
+    def _set_rec_btn_enabled(self, enabled: bool):
+        self._rec_btn_enabled = enabled
+        self.rec_btn.config(cursor="hand2" if enabled else "")
 
     def _toggle_recording(self):
         if not self.recording: self._start_recording()
@@ -486,8 +494,7 @@ class MeetingRecorder(tk.Tk):
 
         mode = self.source_mode.get()
         label = {"mic": "Mikrofon", "blackhole": "Teams/Meet", "both": "Mikrofon + BlackHole"}.get(mode, mode)
-        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="white",
-                            activebackground="#A93226", activeforeground="white")
+        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="white")
         self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self.save_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self._set_status(f"● Spelar in  —  {label}")
@@ -500,8 +507,8 @@ class MeetingRecorder(tk.Tk):
         """Stop audio capture immediately. Transcription continues in background."""
         self.recording = False
         if self.timer_id: self.after_cancel(self.timer_id); self.timer_id = None
-        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG,
-                            activebackground=FG3, activeforeground=BG, state="disabled")
+        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG)
+        self._set_rec_btn_enabled(False)
         self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
         self._log("Ljud stoppat. Väntar på att transkription ska slutföras…")
         threading.Thread(target=self._wait_for_transcription, daemon=True).start()
@@ -517,7 +524,7 @@ class MeetingRecorder(tk.Tk):
         self.after(0, self._on_done)
 
     def _on_done(self):
-        self.rec_btn.config(state="normal")
+        self._set_rec_btn_enabled(True)
         self._set_status("Klart.  Klicka 'Generera anteckningar'.")
         if self.transcript_parts:
             self.notes_btn.config(state="normal", bg=FG, fg=BG)
