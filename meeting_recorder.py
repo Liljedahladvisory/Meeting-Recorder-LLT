@@ -73,6 +73,7 @@ def separator(parent, color=BORDER, padx=0, pady=0):
 class MeetingRecorder(tk.Tk):
     def __init__(self):
         super().__init__()
+        self._set_macos_app_name()
         self.title("Meeting Recorder — Liljedahl Advisory")
         self.configure(bg=BG)
         self.geometry("900x860")
@@ -111,6 +112,20 @@ class MeetingRecorder(tk.Tk):
         self._poll_log()
         self.after(200, self._refresh_devices)
         threading.Thread(target=self._preload_whisper, daemon=True).start()
+
+    # ── macOS app name ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _set_macos_app_name():
+        """Replace 'Python' with 'Meeting Recorder' in the macOS menu bar."""
+        try:
+            from Foundation import NSBundle
+            bundle = NSBundle.mainBundle()
+            info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+            if info is not None:
+                info["CFBundleName"] = "Meeting Recorder"
+        except Exception:
+            pass  # PyObjC not available — menu bar name stays as-is
 
     # ── UI construction ──────────────────────────────────────────────────────
 
