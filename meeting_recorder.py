@@ -75,7 +75,10 @@ def _set_macos_app_name():
     Must be called BEFORE Tk.__init__ — once tkinter initialises the
     macOS NSApplication the bundle name is already locked in."""
     try:
-        from Foundation import NSBundle
+        from Foundation import NSProcessInfo, NSBundle
+        # setProcessName_ is the most reliable way to change the menu bar name
+        NSProcessInfo.processInfo().setProcessName_("Meeting Recorder")
+        # Also patch the bundle dictionaries as a belt-and-suspenders measure
         bundle = NSBundle.mainBundle()
         for d in filter(None, [bundle.localizedInfoDictionary(),
                                 bundle.infoDictionary()]):
