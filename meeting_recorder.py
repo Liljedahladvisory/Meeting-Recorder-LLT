@@ -30,6 +30,7 @@ FG3      = "#D4D4D4"
 FG_DIM   = "#555555"
 RED      = "#C0392B"
 GREEN    = "#27AE60"
+AMBER    = "#D4A017"
 
 FONT_LOGO1 = ("Helvetica Neue", 15, "bold")
 FONT_LOGO2 = ("Helvetica Neue", 15)
@@ -74,8 +75,8 @@ class MeetingRecorder(tk.Tk):
         super().__init__()
         self.title("Meeting Recorder — Liljedahl Advisory")
         self.configure(bg=BG)
-        self.geometry("900x820")
-        self.minsize(760, 680)
+        self.geometry("900x860")
+        self.minsize(760, 700)
         self.resizable(True, True)
 
         self.api_key        = tk.StringVar()
@@ -85,24 +86,33 @@ class MeetingRecorder(tk.Tk):
         self.language       = tk.StringVar(value="sv")
         self.mic_device_idx = tk.IntVar(value=-1)
         self.bh_device_idx  = tk.IntVar(value=-1)
+        self.whisper_size   = tk.StringVar(value="medium")
 
-        self.recording        = False
-        self.audio_chunks     = []
-        self.transcript_parts = []
-        self.rec_thread       = None
-        self.log_q            = queue.Queue()
-        self.whisper_model    = None
-        self.diarization_pipeline = None
-        self.anthropic_client = None
-        self.total_seconds    = 0
-        self.timer_id         = None
-        self._devices         = []
+        self.recording              = False
+        self.audio_chunks           = []
+        self.transcript_parts       = []
+        self.rec_thread             = None
+        self.log_q                  = queue.Queue()
+        self.whisper_model          = None
+        self._loaded_whisper_size   = None
+        self.diarization_pipeline   = None
+        self.anthropic_client       = None
+        self.total_seconds          = 0
+        self.timer_id               = None
+        self._devices               = []
+
+        # Transcription queue — decouples audio capture from transcription
+        self.transcription_queue         = queue.Queue()
+        self.pending_transcriptions      = 0
+        self._transcription_worker_thread = None
 
         self._build_ui()
         self._load_key_from_env()
         self._poll_log()
         self.after(200, self._refresh_devices)
         threading.Thread(target=self._preload_whisper, daemon=True).start()
+
+    # ── UI construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
         self._build_header()
@@ -163,7 +173,6 @@ class MeetingRecorder(tk.Tk):
         field("Möte / titel", self.meeting_title)
         field("Deltagare", self.participants, hint="namn, roll — kommaseparerade")
 
-
         # Språkväljare
         lang_row = tk.Frame(card, bg=BG2)
         lang_row.pack(fill="x", pady=5)
@@ -174,6 +183,25 @@ class MeetingRecorder(tk.Tk):
                            font=FONT_S, bg=BG2, fg=FG, selectcolor=BG2,
                            activebackground=BG2, activeforeground=FG3,
                            cursor="hand2").pack(side="left", padx=(0, 16))
+
+        # Whisper-modell
+        model_row = tk.Frame(card, bg=BG2)
+        model_row.pack(fill="x", pady=5)
+        tk.Label(model_row, text="Whisper-modell", font=FONT_S, bg=BG2, fg=FG2,
+                 width=17, anchor="w").pack(side="left")
+        for val, lbl, hint in [
+            ("small",    "Small",    "snabb"),
+            ("medium",   "Medium",   "balanserad"),
+            ("large-v3", "Large v3", "bäst kvalitet, långsammast"),
+        ]:
+            col = tk.Frame(model_row, bg=BG2)
+            col.pack(side="left", padx=(0, 4))
+            tk.Radiobutton(col, text=lbl, variable=self.whisper_size, value=val,
+                           font=FONT_S, bg=BG2, fg=FG, selectcolor=BG2,
+                           activebackground=BG2, activeforeground=FG3,
+                           cursor="hand2").pack(side="left")
+            tk.Label(col, text=f"({hint})", font=("Helvetica Neue", 9),
+                     bg=BG2, fg=FG_DIM).pack(side="left", padx=(2, 16))
 
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=28, pady=6)
@@ -296,6 +324,8 @@ class MeetingRecorder(tk.Tk):
         tk.Label(self, textvariable=self.status_var, font=("Helvetica Neue", 10),
                  bg=BG, fg=FG_DIM, anchor="w", padx=28, pady=8).pack(fill="x")
 
+    # ── Device handling ───────────────────────────────────────────────────────
+
     def _refresh_devices(self):
         self._devices = list_audio_devices()
         if not self._devices:
@@ -329,6 +359,8 @@ class MeetingRecorder(tk.Tk):
         mode = self.source_mode.get()
         self._mic_combo.config(state="readonly" if mode in ("mic", "both") else "disabled")
         self._bh_combo.config(state="readonly" if mode in ("blackhole", "both") else "disabled")
+
+    # ── UI helpers ────────────────────────────────────────────────────────────
 
     def _switch_tab(self):
         for w in (self.transcript_box, self.notes_box, self.log_box): w.pack_forget()
@@ -364,6 +396,50 @@ class MeetingRecorder(tk.Tk):
             self.api_key.set(key)
             self._log("API-nyckel laddad från miljövariabel.")
 
+    # ── Whisper loading ───────────────────────────────────────────────────────
+
+    def _preload_whisper(self):
+        size = self.whisper_size.get()
+        try:
+            from faster_whisper import WhisperModel
+            from pyannote.audio import Pipeline
+            self._log(f"Förladdar Whisper {size} i bakgrunden…")
+            self.after(0, lambda: self._set_status(f"Laddar Whisper {size}…"))
+            self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
+            self._loaded_whisper_size = size
+            self._log("Whisper redo. Laddar talarseparation…")
+            self.after(0, lambda: self._set_status("Laddar talarseparation…"))
+            hf_token = os.environ.get("HF_TOKEN", "")
+            if hf_token:
+                self.diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1", token=hf_token)
+                self._log("Talarseparation redo.")
+            else:
+                self._log("HF_TOKEN saknas — talarseparation inaktiverad.")
+            self.after(0, lambda: self._set_status(
+                f"Redo  —  Whisper {size}" +
+                (" + talarseparation" if self.diarization_pipeline else "") + " laddat."))
+        except Exception as e:
+            import traceback
+            self._log(f"Förladdningsfel: {e}")
+            self._log(traceback.format_exc())
+            self.after(0, lambda: self._set_status("Redo (whisper ej förladdad)"))
+
+    def _load_whisper(self):
+        size = self.whisper_size.get()
+        try:
+            from faster_whisper import WhisperModel
+            self._log(f"Laddar Whisper {size}…")
+            self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
+            self._loaded_whisper_size = size
+            self._log("Whisper klar.")
+            self.after(0, self._do_start)
+        except Exception as e:
+            self._log(f"Whisper-fel: {e}")
+            self.after(0, lambda: messagebox.showerror("Whisper-fel", str(e)))
+
+    # ── Recording flow ────────────────────────────────────────────────────────
+
     def _toggle_recording(self):
         if not self.recording: self._start_recording()
         else: self._stop_recording()
@@ -382,63 +458,67 @@ class MeetingRecorder(tk.Tk):
             messagebox.showerror("Ingen mikrofon", "Välj en mikrofonenhet."); return
         if mode in ("blackhole", "both") and self.bh_device_idx.get() < 0:
             messagebox.showerror("BlackHole saknas", "brew install blackhole-2ch"); return
-        if self.whisper_model is None:
-            self._set_status("Laddar Whisper large-v3…")
+        # Reload Whisper if model size changed or not yet loaded
+        if self.whisper_model is None or self._loaded_whisper_size != self.whisper_size.get():
+            self._set_status(f"Laddar Whisper {self.whisper_size.get()}…")
             self.update()
             threading.Thread(target=self._load_whisper, daemon=True).start()
             return
         self._do_start()
-
-    def _preload_whisper(self):
-        try:
-            from faster_whisper import WhisperModel
-            from pyannote.audio import Pipeline
-            self._log("Förladdar Whisper large-v3 i bakgrunden…")
-            self.after(0, lambda: self._set_status("Laddar Whisper…"))
-            self.whisper_model = WhisperModel("large-v3", device="cpu", compute_type="int8")
-            self._log("Whisper redo. Laddar talarseparation…")
-            self.after(0, lambda: self._set_status("Laddar talarseparation…"))
-            hf_token = os.environ.get("HF_TOKEN", "")
-            if hf_token:
-                self.diarization_pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1", token=hf_token)
-                self._log("Talarseparation redo.")
-            else:
-                self._log("HF_TOKEN saknas — talarseparation inaktiverad.")
-            self.after(0, lambda: self._set_status("Redo  —  Whisper + talarseparation laddat."))
-        except Exception as e:
-            import traceback
-            self._log(f"Förladdningsfel: {e}")
-            self._log(traceback.format_exc())
-            self.after(0, lambda: self._set_status("Redo (talarseparation ej tillgänglig)"))
-    def _load_whisper(self):
-        try:
-            from faster_whisper import WhisperModel
-            self._log("Laddar Whisper large-v3…")
-            self.whisper_model = WhisperModel("large-v3", device="cpu", compute_type="int8")
-            self._log("Whisper klar.")
-            self.after(0, self._do_start)
-        except Exception as e:
-            self._log(f"Whisper-fel: {e}")
-            self.after(0, lambda: messagebox.showerror("Whisper-fel", str(e)))
 
     def _do_start(self):
         self.recording = True
         self.audio_chunks = []
         self.transcript_parts = []
         self.total_seconds = 0
+        self.pending_transcriptions = 0
         self._clear(self.transcript_box)
         self._clear(self.notes_box)
+
+        # Fresh transcription queue and worker for this session
+        self.transcription_queue = queue.Queue()
+        self._transcription_worker_thread = threading.Thread(
+            target=self._transcription_worker, daemon=True)
+        self._transcription_worker_thread.start()
+
         mode = self.source_mode.get()
         label = {"mic": "Mikrofon", "blackhole": "Teams/Meet", "both": "Mikrofon + BlackHole"}.get(mode, mode)
-        self.rec_btn.config(text="■  Stoppa inspelning", bg=RED, fg=FG)
+        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg=FG)
         self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self.save_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self._set_status(f"● Spelar in  —  {label}")
         self._tick()
         self.rec_thread = threading.Thread(target=self._record_loop, args=(mode,), daemon=True)
         self.rec_thread.start()
-        self._log(f"Inspelning startad — läge: {mode}")
+        self._log(f"Inspelning startad — läge: {mode}, modell: {self.whisper_size.get()}")
+
+    def _stop_recording(self):
+        """Stop audio capture immediately. Transcription continues in background."""
+        self.recording = False
+        if self.timer_id: self.after_cancel(self.timer_id); self.timer_id = None
+        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG, state="disabled")
+        self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
+        self._log("Ljud stoppat. Väntar på att transkription ska slutföras…")
+        threading.Thread(target=self._wait_for_transcription, daemon=True).start()
+
+    def _wait_for_transcription(self):
+        """Wait for audio capture to finish, then drain the transcription queue."""
+        if self.rec_thread:
+            self.rec_thread.join(timeout=15)
+        # Signal transcription worker to stop after draining the queue
+        self.transcription_queue.put(None)
+        if self._transcription_worker_thread:
+            self._transcription_worker_thread.join(timeout=3600)
+        self.after(0, self._on_done)
+
+    def _on_done(self):
+        self.rec_btn.config(state="normal")
+        self._set_status("Klart.  Klicka 'Generera anteckningar'.")
+        if self.transcript_parts:
+            self.notes_btn.config(state="normal", bg=FG, fg=BG)
+        self._log("Transkription klar.")
+
+    # ── Audio capture ─────────────────────────────────────────────────────────
 
     def _record_loop(self, mode):
         import sounddevice as sd
@@ -468,19 +548,20 @@ class MeetingRecorder(tk.Tk):
                     chunk = self._build_chunk(mode, mic_buf, bh_buf, chunk_frames)
                     if chunk is not None:
                         self.audio_chunks.append(chunk)
-                        self._transcribe_chunk(chunk, len(self.audio_chunks))
+                        self._enqueue_transcription(chunk, len(self.audio_chunks))
 
+            # Enqueue any remaining buffered audio
             remainder = max(len(mic_buf), len(bh_buf))
             if remainder > SAMPLE_RATE:
                 chunk = self._build_chunk(mode, mic_buf, bh_buf, remainder)
                 if chunk is not None:
                     self.audio_chunks.append(chunk)
-                    self._transcribe_chunk(chunk, len(self.audio_chunks))
+                    self._enqueue_transcription(chunk, len(self.audio_chunks))
         finally:
             for s in streams:
                 try: s.stop(); s.close()
                 except Exception: pass
-        self._log("Inspelningsloop avslutad.")
+        self._log("Ljudinspelning avslutad.")
 
     def _build_chunk(self, mode, mic_buf, bh_buf, n):
         if n <= 0: return None
@@ -494,47 +575,115 @@ class MeetingRecorder(tk.Tk):
             del mic_buf[:m]; del bh_buf[:b]
             return mix_channels(ma, ba)
 
+    # ── Transcription queue ───────────────────────────────────────────────────
+
+    def _enqueue_transcription(self, chunk, idx):
+        self.pending_transcriptions += 1
+        self.transcription_queue.put((chunk, idx))
+        self.after(0, self._update_pending_status)
+
+    def _update_pending_status(self):
+        if self.pending_transcriptions > 0 and not self.recording:
+            self._set_status(
+                f"Transkriberar — {self.pending_transcriptions} "
+                f"{'del' if self.pending_transcriptions == 1 else 'delar'} kvar…")
+
+    def _transcription_worker(self):
+        """Single worker thread that drains the transcription queue."""
+        while True:
+            item = self.transcription_queue.get()
+            if item is None:  # sentinel: no more chunks
+                break
+            chunk, idx = item
+            self._transcribe_chunk(chunk, idx)
+            self.pending_transcriptions -= 1
+            self.after(0, self._update_pending_status)
+
+    # ── Transcription + diarization ───────────────────────────────────────────
+
     def _transcribe_chunk(self, chunk, idx):
-        self.after(0, lambda: self._set_status(f"Transkriberar del {idx}…  (large-v3)"))
-        self.after(0, lambda i=idx: self._set_status(f"Transkriberar del {i} — vänta, detta kan ta en stund…"))
+        n_pending = self.pending_transcriptions
+        self.after(0, lambda i=idx, p=n_pending: self._set_status(
+            f"Transkriberar del {i}  ({p} {'kvar' if p > 1 else 'återstår'})…"))
         self._log(f"Transkriberar del {idx} ({len(chunk)/SAMPLE_RATE:.0f}s)…")
+        fname = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 fname = f.name
             with wave.open(fname, "wb") as wf:
                 wf.setnchannels(CHANNELS); wf.setsampwidth(2)
                 wf.setframerate(SAMPLE_RATE); wf.writeframes(chunk.tobytes())
+
+            # Always request word timestamps so diarization can align if available
             segs, info = self.whisper_model.transcribe(
-                fname, language=self.language.get(), task="transcribe", beam_size=5, vad_filter=True)
-            text = " ".join(s.text for s in segs).strip()
-            os.unlink(fname)
+                fname, language=self.language.get(), task="transcribe",
+                beam_size=5, vad_filter=True,
+                word_timestamps=bool(self.diarization_pipeline))
+
+            segments = list(segs)  # materialise generator before file is needed again
+
+            if self.diarization_pipeline and segments:
+                text = self._diarize(fname, segments)
+            else:
+                text = " ".join(s.text for s in segments).strip()
+
+            if fname and os.path.exists(fname):
+                os.unlink(fname)
+                fname = None
+
             if text:
                 ts = self._fmt_time(len(self.transcript_parts) * CHUNK_SECONDS)
                 self.transcript_parts.append(text)
-                line = f"[{ts}]  {text}\n"
+                line = f"[{ts}]\n{text}\n\n"
                 self.after(0, lambda t=line: self._append(self.transcript_box, t, FG3))
-                self._log(f"Del {idx} ({info.language}): {text[:70]}…")
+                preview = text.replace("\n", " ")
+                self._log(f"Del {idx} ({info.language}): {preview[:80]}…")
             else:
                 self._log(f"Del {idx}: tyst.")
         except Exception as e:
             self._log(f"Transkriptionsfel del {idx}: {e}")
+        finally:
+            if fname and os.path.exists(fname):
+                try: os.unlink(fname)
+                except Exception: pass
 
-    def _stop_recording(self):
-        self.recording = False
-        if self.timer_id: self.after_cancel(self.timer_id); self.timer_id = None
-        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG)
-        self._set_status("Inspelning stoppad — slutför transkription…")
-        self._log("Stoppar…")
-        def wait():
-            if self.rec_thread: self.rec_thread.join(timeout=180)
-            self.after(0, self._on_done)
-        threading.Thread(target=wait, daemon=True).start()
+    def _diarize(self, fname, segments):
+        """Align pyannote speaker turns with Whisper segments and return labelled text."""
+        try:
+            diarization = self.diarization_pipeline(fname)
 
-    def _on_done(self):
-        self._set_status("Klart.  Klicka 'Generera anteckningar'.")
-        if self.transcript_parts:
-            self.notes_btn.config(state="normal", bg=FG, fg=BG)
-        self._log("Färdig.")
+            # Build a flat list of (midpoint, text) from Whisper segments
+            seg_mids = [(((s.start + s.end) / 2), s.text.strip()) for s in segments]
+
+            # Map each segment midpoint to the speaker whose turn covers it
+            speaker_map: dict[float, str] = {}
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                for mid, _ in seg_mids:
+                    if turn.start <= mid <= turn.end:
+                        speaker_map[mid] = speaker
+
+            # Group consecutive segments by speaker
+            lines = []
+            current_speaker = None
+            current_texts: list[str] = []
+            for mid, text in seg_mids:
+                speaker = speaker_map.get(mid, "OKÄND")
+                if speaker != current_speaker:
+                    if current_texts:
+                        lines.append(f"**{current_speaker}:** {' '.join(current_texts)}")
+                    current_speaker = speaker
+                    current_texts = [text]
+                else:
+                    current_texts.append(text)
+            if current_texts:
+                lines.append(f"**{current_speaker}:** {' '.join(current_texts)}")
+
+            return "\n".join(lines) if lines else " ".join(t for _, t in seg_mids)
+        except Exception as e:
+            self._log(f"Diariseringsfel: {e} — faller tillbaka på vanlig text.")
+            return " ".join(s.text for s in segments).strip()
+
+    # ── Notes generation ──────────────────────────────────────────────────────
 
     def _generate_notes(self):
         if not self.transcript_parts:
@@ -583,6 +732,8 @@ class MeetingRecorder(tk.Tk):
         self._set_status("Anteckningar klara.  Klicka 'Spara' för att exportera.")
         self._log("Anteckningar genererade.")
 
+    # ── Save ──────────────────────────────────────────────────────────────────
+
     def _save_output(self):
         title   = self.meeting_title.get().strip().replace(" ", "_") or "mote"
         default = f"{datetime.now().strftime('%Y%m%d_%H%M')}_{title}"
@@ -605,6 +756,8 @@ class MeetingRecorder(tk.Tk):
             self._log(f"Fil sparad: {path}")
         except Exception as e:
             messagebox.showerror("Sparfel", str(e))
+
+    # ── Timer ─────────────────────────────────────────────────────────────────
 
     def _tick(self):
         if not self.recording: return
