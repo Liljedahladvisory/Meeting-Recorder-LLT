@@ -648,37 +648,74 @@ class MeetingRecorder(tk.Tk):
                 except Exception: pass
 
     def _diarize(self, fname, segments):
-        """Align pyannote speaker turns with Whisper segments and return labelled text."""
+        """Word-level speaker alignment: assigns each Whisper word to the pyannote
+        speaker turn whose interval covers the word's midpoint.  Falls back to
+        closest turn for words that land in a silence gap between turns."""
         try:
-            diarization = self.diarization_pipeline(fname)
+            # Pass participant count as a hint so pyannote can constrain the model
+            n_speakers = None
+            participants_str = self.participants.get().strip()
+            if participants_str:
+                count = len([p for p in participants_str.split(",") if p.strip()])
+                if count >= 2:
+                    n_speakers = count
+                    self._log(f"Diarisering med {n_speakers} kända talare.")
 
-            # Build a flat list of (midpoint, text) from Whisper segments
-            seg_mids = [(((s.start + s.end) / 2), s.text.strip()) for s in segments]
+            diarization_kw = {"num_speakers": n_speakers} if n_speakers else {}
+            diarization = self.diarization_pipeline(fname, **diarization_kw)
 
-            # Map each segment midpoint to the speaker whose turn covers it
-            speaker_map: dict[float, str] = {}
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                for mid, _ in seg_mids:
-                    if turn.start <= mid <= turn.end:
-                        speaker_map[mid] = speaker
+            # Build a sorted list of (start, end, speaker) for lookup
+            turns = sorted(
+                [(turn.start, turn.end, speaker)
+                 for turn, _, speaker in diarization.itertracks(yield_label=True)],
+                key=lambda x: x[0],
+            )
 
-            # Group consecutive segments by speaker
-            lines = []
-            current_speaker = None
-            current_texts: list[str] = []
-            for mid, text in seg_mids:
-                speaker = speaker_map.get(mid, "OKÄND")
-                if speaker != current_speaker:
-                    if current_texts:
-                        lines.append(f"**{current_speaker}:** {' '.join(current_texts)}")
-                    current_speaker = speaker
-                    current_texts = [text]
+            def find_speaker(t: float) -> str:
+                """Return the speaker whose turn covers t; fall back to closest."""
+                for start, end, spk in turns:
+                    if start <= t <= end:
+                        return spk
+                if turns:
+                    return min(turns, key=lambda x: min(abs(x[0] - t), abs(x[1] - t)))[2]
+                return "OKÄND"
+
+            # Collect word-level entries — use Whisper word timestamps when available
+            word_entries: list[tuple[float, float, str]] = []
+            for seg in segments:
+                if hasattr(seg, "words") and seg.words:
+                    for w in seg.words:
+                        word_entries.append((w.start, w.end, w.word))
                 else:
-                    current_texts.append(text)
-            if current_texts:
-                lines.append(f"**{current_speaker}:** {' '.join(current_texts)}")
+                    # No word timestamps: treat whole segment as one unit
+                    word_entries.append((seg.start, seg.end, seg.text.strip()))
 
-            return "\n".join(lines) if lines else " ".join(t for _, t in seg_mids)
+            if not word_entries:
+                return " ".join(s.text for s in segments).strip()
+
+            # Assign speaker to every word by its midpoint
+            labeled: list[tuple[str, str]] = [
+                (find_speaker((s + e) / 2), w) for s, e, w in word_entries
+            ]
+
+            # Group consecutive words that share a speaker
+            lines: list[str] = []
+            current_speaker: str | None = None
+            current_words: list[str] = []
+            for speaker, word in labeled:
+                if speaker != current_speaker:
+                    if current_words:
+                        lines.append(f"**{current_speaker}:** {''.join(current_words).strip()}")
+                    current_speaker = speaker
+                    current_words = [word]
+                else:
+                    current_words.append(word)
+            if current_words:
+                lines.append(f"**{current_speaker}:** {''.join(current_words).strip()}")
+
+            result = "\n".join(lines)
+            return result if result.strip() else " ".join(w for _, _, w in word_entries)
+
         except Exception as e:
             self._log(f"Diariseringsfel: {e} — faller tillbaka på vanlig text.")
             return " ".join(s.text for s in segments).strip()
