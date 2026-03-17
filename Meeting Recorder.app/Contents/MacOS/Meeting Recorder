@@ -1,0 +1,14 @@
+#!/bin/bash
+# Launcher for Meeting Recorder.app
+# Finds the repo root (three levels above MacOS/) and runs meeting_recorder.py
+# using the venv if present, otherwise falls back to the system python3.
+
+REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+if [ -f "$REPO/venv/bin/python3" ]; then
+    PYTHON="$REPO/venv/bin/python3"
+else
+    PYTHON="$(command -v python3)"
+fi
+
+exec "$PYTHON" "$REPO/meeting_recorder.py"
