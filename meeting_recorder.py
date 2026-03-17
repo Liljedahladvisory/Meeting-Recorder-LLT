@@ -483,7 +483,8 @@ class MeetingRecorder(tk.Tk):
 
         mode = self.source_mode.get()
         label = {"mic": "Mikrofon", "blackhole": "Teams/Meet", "both": "Mikrofon + BlackHole"}.get(mode, mode)
-        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg=FG)
+        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="white",
+                            activebackground="#A93226", activeforeground="white")
         self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self.save_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self._set_status(f"● Spelar in  —  {label}")
@@ -496,7 +497,8 @@ class MeetingRecorder(tk.Tk):
         """Stop audio capture immediately. Transcription continues in background."""
         self.recording = False
         if self.timer_id: self.after_cancel(self.timer_id); self.timer_id = None
-        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG, state="disabled")
+        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG,
+                            activebackground=FG3, activeforeground=BG, state="disabled")
         self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
         self._log("Ljud stoppat. Väntar på att transkription ska slutföras…")
         threading.Thread(target=self._wait_for_transcription, daemon=True).start()
