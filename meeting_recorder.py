@@ -14,6 +14,14 @@ import wave
 import tempfile
 from datetime import datetime
 import numpy as np
+try:
+    import keyring
+    _KEYRING_AVAILABLE = True
+except ImportError:
+    _KEYRING_AVAILABLE = False
+
+_KEYRING_SERVICE = "Duchs-Meeting-Recorder"
+_KEYRING_USERNAME = "anthropic_api_key"
 
 SAMPLE_RATE   = 16000
 CHANNELS      = 1
@@ -415,10 +423,28 @@ class MeetingRecorder(tk.Tk):
         widget.config(state="disabled")
 
     def _load_key_from_env(self):
+        # 1. Try keychain first (most reliable persistent storage)
+        if _KEYRING_AVAILABLE:
+            try:
+                saved = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+                if saved:
+                    self.api_key.set(saved)
+                    self._log("API-nyckel laddad från Keychain.")
+                    return
+            except Exception:
+                pass
+        # 2. Fall back to environment variable
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if key:
             self.api_key.set(key)
             self._log("API-nyckel laddad från miljövariabel.")
+
+    def _save_key_to_keychain(self, key: str):
+        if _KEYRING_AVAILABLE:
+            try:
+                keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
+            except Exception:
+                pass
 
     # ── Whisper loading ───────────────────────────────────────────────────────
 
@@ -488,6 +514,7 @@ class MeetingRecorder(tk.Tk):
             self.anthropic_client = ac.Anthropic(api_key=key)
         except Exception as e:
             messagebox.showerror("Fel", str(e)); return
+        self._save_key_to_keychain(key)
         mode = self.source_mode.get()
         if mode in ("mic", "both") and self.mic_device_idx.get() < 0:
             messagebox.showerror("Ingen mikrofon", "Välj en mikrofonenhet."); return
