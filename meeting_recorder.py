@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Meeting Recorder & Notes Generator — v3
-Liljedahl Advisory AB
+Duch's Meeting Recorder & Notes Generator — v1
+Duch
 """
 
 import tkinter as tk
@@ -77,13 +77,13 @@ def _set_macos_app_name():
     try:
         from Foundation import NSProcessInfo, NSBundle
         # setProcessName_ is the most reliable way to change the menu bar name
-        NSProcessInfo.processInfo().setProcessName_("Meeting Recorder")
+        NSProcessInfo.processInfo().setProcessName_("Duch's Meeting Recorder")
         # Also patch the bundle dictionaries as a belt-and-suspenders measure
         bundle = NSBundle.mainBundle()
         for d in filter(None, [bundle.localizedInfoDictionary(),
                                 bundle.infoDictionary()]):
-            d["CFBundleName"]        = "Meeting Recorder"
-            d["CFBundleDisplayName"] = "Meeting Recorder"
+            d["CFBundleName"]        = "Duch's Meeting Recorder"
+            d["CFBundleDisplayName"] = "Duch's Meeting Recorder"
     except Exception:
         pass  # PyObjC unavailable — menu bar stays as "Python"
 
@@ -92,7 +92,7 @@ class MeetingRecorder(tk.Tk):
     def __init__(self):
         _set_macos_app_name()   # before super().__init__() — timing is critical
         super().__init__()
-        self.title("Meeting Recorder — Liljedahl Advisory")
+        self.title("Duch's Meeting Recorder")
         self.configure(bg=BG)
         self.geometry("900x860")
         self.minsize(760, 700)
@@ -147,10 +147,8 @@ class MeetingRecorder(tk.Tk):
         hdr.pack(fill="x")
         logo_frame = tk.Frame(hdr, bg=BG)
         logo_frame.pack(side="left")
-        tk.Label(logo_frame, text="Liljedahl", font=FONT_LOGO1, bg=BG, fg=FG2).pack(side="left")
-        tk.Label(logo_frame, text=" Advisory", font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
-        tk.Label(logo_frame, text="  |  Meeting Recorder", font=("Helvetica Neue", 11),
-                 bg=BG, fg=FG_DIM).pack(side="left")
+        tk.Label(logo_frame, text="Duch's", font=FONT_LOGO1, bg=BG, fg=FG2).pack(side="left")
+        tk.Label(logo_frame, text="  Meeting Recorder", font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
         self.timer_lbl = tk.Label(hdr, text="00:00:00", font=FONT_TIMER, bg=BG, fg=FG_DIM)
         self.timer_lbl.pack(side="right")
         separator(self, color=BORDER)
@@ -778,7 +776,7 @@ class MeetingRecorder(tk.Tk):
             f"## Sammanfattning\n## Beslut\n"
             f"## Action Points\n| Åtgärd | Ansvarig | Deadline |\n|--------|----------|----------|\n\n"
             f"## Nästa steg\n## Diskussion i sammandrag\n\n"
-            f"---\n*Genererat av Liljedahl Advisory Meeting Recorder*"
+            f"---\n*Genererat av Duch's Meeting Recorder*"
         )
         try:
             resp = self.anthropic_client.messages.create(
