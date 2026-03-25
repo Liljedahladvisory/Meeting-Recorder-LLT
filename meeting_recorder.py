@@ -32,8 +32,9 @@ RED      = "#C0392B"
 GREEN    = "#27AE60"
 AMBER    = "#D4A017"
 
-FONT_LOGO1 = ("Helvetica Neue", 15, "bold")
-FONT_LOGO2 = ("Helvetica Neue", 15)
+FONT_LOGO1    = ("Helvetica Neue", 15, "bold")
+FONT_LOGO2    = ("Helvetica Neue", 15)
+FONT_POWERED  = ("Helvetica Neue", 9, "italic")
 FONT_H     = ("Helvetica Neue", 11, "bold")
 FONT_B     = ("Helvetica Neue", 11)
 FONT_S     = ("Helvetica Neue", 10)
@@ -149,6 +150,8 @@ class MeetingRecorder(tk.Tk):
         logo_frame.pack(side="left")
         tk.Label(logo_frame, text="Duch's", font=FONT_LOGO1, bg=BG, fg=FG2).pack(side="left")
         tk.Label(logo_frame, text="  Meeting Recorder", font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
+        tk.Label(logo_frame, text="   Powered by Liljedahl Legal Tech", font=FONT_POWERED,
+                 bg=BG, fg=FG_DIM).pack(side="left")
         self.timer_lbl = tk.Label(hdr, text="00:00:00", font=FONT_TIMER, bg=BG, fg=FG_DIM)
         self.timer_lbl.pack(side="right")
         separator(self, color=BORDER)
@@ -338,8 +341,12 @@ class MeetingRecorder(tk.Tk):
     def _build_status(self):
         separator(self, color=BORDER)
         self.status_var = tk.StringVar(value="Redo.")
-        tk.Label(self, textvariable=self.status_var, font=("Helvetica Neue", 10),
-                 bg=BG, fg=FG_DIM, anchor="w", padx=28, pady=8).pack(fill="x")
+        status_frame = tk.Frame(self, bg=BG)
+        status_frame.pack(fill="x")
+        tk.Label(status_frame, textvariable=self.status_var, font=("Helvetica Neue", 10),
+                 bg=BG, fg=FG_DIM, anchor="w", padx=28, pady=8).pack(side="left")
+        tk.Label(status_frame, text="Powered by Liljedahl Legal Tech",
+                 font=FONT_POWERED, bg=BG, fg=FG_DIM, padx=28, pady=8).pack(side="right")
 
     # ── Device handling ───────────────────────────────────────────────────────
 
@@ -776,7 +783,7 @@ class MeetingRecorder(tk.Tk):
             f"## Sammanfattning\n## Beslut\n"
             f"## Action Points\n| Åtgärd | Ansvarig | Deadline |\n|--------|----------|----------|\n\n"
             f"## Nästa steg\n## Diskussion i sammandrag\n\n"
-            f"---\n*Genererat av Duch's Meeting Recorder*"
+            f"---\n*Genererat av Duch's Meeting Recorder · Powered by Liljedahl Legal Tech*"
         )
         try:
             resp = self.anthropic_client.messages.create(
