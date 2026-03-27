@@ -298,34 +298,52 @@ class MeetingRecorder(tk.Tk):
                   command=self._refresh_devices).pack(side="left", padx=(8, 0))
 
     def _build_buttons(self):
-        outer = tk.Frame(self, bg=BG, padx=32, pady=18)
+        outer = tk.Frame(self, bg=BG, padx=32, pady=20)
         outer.pack(fill="x")
 
-        # Primary action buttons
         btn_row = tk.Frame(outer, bg=BG)
         btn_row.pack(fill="x")
 
+        # ── Recording button (Label so macOS honours bg colour) ──────────────
         self._rec_btn_enabled = True
-        self.rec_btn = tk.Label(btn_row, text="●  Starta inspelning",
-                                font=("Helvetica Neue", 12, "bold"),
-                                bg=FG, fg=BG, padx=26, pady=12, cursor="hand2")
+        self.rec_btn = tk.Label(
+            btn_row,
+            text="⬤  Starta inspelning",
+            font=("Helvetica Neue", 12, "bold"),
+            bg=ACCENT, fg="#FFFFFF",
+            padx=28, pady=13,
+            cursor="hand2",
+            relief="flat",
+        )
         self.rec_btn.bind("<Button-1>", self._on_rec_btn_click)
-        self.rec_btn.pack(side="left", padx=(0, 8))
+        self.rec_btn.pack(side="left", padx=(0, 10))
 
-        self.notes_btn = tk.Button(btn_row, text="◆  Generera anteckningar",
-                                   font=("Helvetica Neue", 12),
-                                   bg=BG3, fg=FG_DIM, relief="flat", bd=0,
-                                   padx=26, pady=12, cursor="hand2",
-                                   activebackground=BG4, activeforeground=FG,
-                                   state="disabled", command=self._generate_notes)
-        self.notes_btn.pack(side="left", padx=(0, 8))
+        # ── Secondary buttons — outlined ghost style ──────────────────────────
+        ghost_kw = dict(
+            font=("Helvetica Neue", 12),
+            relief="solid", bd=1,
+            padx=24, pady=12,
+            cursor="hand2",
+        )
 
-        self.save_btn = tk.Button(btn_row, text="↓  Spara",
-                                  font=("Helvetica Neue", 12),
-                                  bg=BG3, fg=FG_DIM, relief="flat", bd=0,
-                                  padx=26, pady=12, cursor="hand2",
-                                  activebackground=BG4, activeforeground=FG,
-                                  state="disabled", command=self._save_output)
+        self.notes_btn = tk.Button(
+            btn_row, text="◆  Generera anteckningar",
+            bg=BG, fg=FG_DIM,
+            activebackground=BG2, activeforeground=FG,
+            highlightbackground=BORDER2, highlightthickness=1,
+            state="disabled", command=self._generate_notes,
+            **ghost_kw,
+        )
+        self.notes_btn.pack(side="left", padx=(0, 10))
+
+        self.save_btn = tk.Button(
+            btn_row, text="↓  Spara",
+            bg=BG, fg=FG_DIM,
+            activebackground=BG2, activeforeground=FG,
+            highlightbackground=BORDER2, highlightthickness=1,
+            state="disabled", command=self._save_output,
+            **ghost_kw,
+        )
         self.save_btn.pack(side="left")
 
         # Format selector — own row, clearly separated
@@ -654,9 +672,9 @@ class MeetingRecorder(tk.Tk):
             target=self._transcription_worker, daemon=True)
         self._transcription_worker_thread.start()
 
-        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg=FG)
-        self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
-        self.save_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
+        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="#FFFFFF")
+        self.notes_btn.config(state="disabled", bg=BG, fg=FG_DIM)
+        self.save_btn.config(state="disabled", bg=BG, fg=FG_DIM)
         self._set_status("● Spelar in  —  Mikrofon")
         self._tick()
         self.rec_thread = threading.Thread(target=self._record_loop, daemon=True)
@@ -686,7 +704,7 @@ class MeetingRecorder(tk.Tk):
         self._set_rec_btn_enabled(True)
         self._set_status("Klart.  Klicka 'Generera anteckningar'.")
         if self.transcript_parts:
-            self.notes_btn.config(state="normal", bg=FG, fg=BG)
+            self.notes_btn.config(state="normal", bg=BG, fg=ACCENT)
         self._log("Transkription klar.")
 
     # ── Audio capture ─────────────────────────────────────────────────────────
@@ -893,13 +911,13 @@ class MeetingRecorder(tk.Tk):
             self._log(f"Claude API-fel: {e}")
             self.after(0, lambda: messagebox.showerror("API-fel", str(e)))
             self.after(0, lambda: self.notes_btn.config(
-                state="normal", bg=FG, fg=BG, text="◆  Generera anteckningar"))
+                state="normal", bg=BG, fg=ACCENT, text="◆  Generera anteckningar"))
 
     def _show_notes(self, notes):
         self._clear(self.notes_box)
         self._append(self.notes_box, notes)
-        self.notes_btn.config(state="normal", bg=GREEN, fg=FG, text="✓  Klara")
-        self.save_btn.config(state="normal", bg=FG, fg=BG)
+        self.notes_btn.config(state="normal", bg=BG, fg=GREEN, text="✓  Klara")
+        self.save_btn.config(state="normal", bg=BG, fg=ACCENT)
         self._set_status("Anteckningar klara.  Klicka 'Spara' för att exportera.")
         self._log("Anteckningar genererade.")
 
