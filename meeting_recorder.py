@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Duch's Meeting Recorder & Notes Generator — v1
-Duch
+Meeting Recorder & Notes Generator — Powered by Liljedahl Legal Tech
 """
 
 import tkinter as tk
@@ -12,6 +11,7 @@ import os
 import time
 import wave
 import tempfile
+import json
 from datetime import datetime
 import numpy as np
 try:
@@ -20,8 +20,9 @@ try:
 except ImportError:
     _KEYRING_AVAILABLE = False
 
-_KEYRING_SERVICE = "Duchs-Meeting-Recorder"
+_KEYRING_SERVICE  = "MeetingRecorder-LLT"
 _KEYRING_USERNAME = "anthropic_api_key"
+CONFIG_PATH       = os.path.expanduser("~/.meeting_recorder_llt.json")
 
 SAMPLE_RATE   = 16000
 CHANNELS      = 1
@@ -40,15 +41,33 @@ RED      = "#C0392B"
 GREEN    = "#27AE60"
 AMBER    = "#D4A017"
 
-FONT_LOGO1    = ("Helvetica Neue", 15, "bold")
-FONT_LOGO2    = ("Helvetica Neue", 15)
-FONT_POWERED  = ("Helvetica Neue", 9, "italic")
-FONT_H     = ("Helvetica Neue", 11, "bold")
-FONT_B     = ("Helvetica Neue", 11)
-FONT_S     = ("Helvetica Neue", 10)
-FONT_M     = ("Menlo", 10)
-FONT_MS    = ("Menlo", 9)
-FONT_TIMER = ("Menlo", 13)
+FONT_LOGO1   = ("Helvetica Neue", 15, "bold")
+FONT_LOGO2   = ("Helvetica Neue", 15)
+FONT_POWERED = ("Helvetica Neue", 9, "italic")
+FONT_H       = ("Helvetica Neue", 11, "bold")
+FONT_B       = ("Helvetica Neue", 11)
+FONT_S       = ("Helvetica Neue", 10)
+FONT_M       = ("Menlo", 10)
+FONT_MS      = ("Menlo", 9)
+FONT_TIMER   = ("Menlo", 13)
+
+
+def load_config() -> dict:
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_config(cfg: dict):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def list_audio_devices():
@@ -68,15 +87,14 @@ def separator(parent, color=BORDER, padx=0, pady=0):
 
 
 def _set_macos_app_name():
-    """Set the macOS menu bar name before Tk initialises NSApplication."""
     try:
         from Foundation import NSProcessInfo, NSBundle
-        NSProcessInfo.processInfo().setProcessName_("Duch's Meeting Recorder")
+        NSProcessInfo.processInfo().setProcessName_("Meeting Recorder")
         bundle = NSBundle.mainBundle()
         for d in filter(None, [bundle.localizedInfoDictionary(),
                                 bundle.infoDictionary()]):
-            d["CFBundleName"]        = "Duch's Meeting Recorder"
-            d["CFBundleDisplayName"] = "Duch's Meeting Recorder"
+            d["CFBundleName"]        = "Meeting Recorder"
+            d["CFBundleDisplayName"] = "Meeting Recorder"
     except Exception:
         pass
 
@@ -85,11 +103,15 @@ class MeetingRecorder(tk.Tk):
     def __init__(self):
         _set_macos_app_name()
         super().__init__()
-        self.title("Duch's Meeting Recorder")
+        self.title("Meeting Recorder")
         self.configure(bg=BG)
         self.geometry("900x860")
         self.minsize(760, 700)
         self.resizable(True, True)
+
+        # Load persistent config
+        self._config     = load_config()
+        self.user_name   = self._config.get("user_name", "")
 
         self.api_key        = tk.StringVar()
         self.meeting_title  = tk.StringVar()
@@ -112,8 +134,8 @@ class MeetingRecorder(tk.Tk):
         self.timer_id               = None
         self._devices               = []
 
-        self.transcription_queue         = queue.Queue()
-        self.pending_transcriptions      = 0
+        self.transcription_queue          = queue.Queue()
+        self.pending_transcriptions       = 0
         self._transcription_worker_thread = None
 
         self._build_ui()
@@ -121,6 +143,10 @@ class MeetingRecorder(tk.Tk):
         self._poll_log()
         self.after(200, self._refresh_devices)
         threading.Thread(target=self._preload_whisper, daemon=True).start()
+
+        # Show first-run setup if no user name is stored
+        if not self.user_name:
+            self.after(300, self._show_setup_dialog)
 
     # ── UI construction ──────────────────────────────────────────────────────
 
@@ -135,15 +161,35 @@ class MeetingRecorder(tk.Tk):
     def _build_header(self):
         hdr = tk.Frame(self, bg=BG, padx=28, pady=18)
         hdr.pack(fill="x")
+
         logo_frame = tk.Frame(hdr, bg=BG)
         logo_frame.pack(side="left")
-        tk.Label(logo_frame, text="Duch's", font=FONT_LOGO1, bg=BG, fg=FG2).pack(side="left")
-        tk.Label(logo_frame, text="  Meeting Recorder", font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
-        tk.Label(logo_frame, text="   Powered by Liljedahl Legal Tech", font=FONT_POWERED,
-                 bg=BG, fg=FG_DIM).pack(side="left")
+
+        self._logo_name_lbl = tk.Label(
+            logo_frame,
+            text=self._display_name(),
+            font=FONT_LOGO1, bg=BG, fg=FG2)
+        self._logo_name_lbl.pack(side="left")
+
+        tk.Label(logo_frame, text="  Meeting Recorder",
+                 font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
+        tk.Label(logo_frame, text="   Powered by Liljedahl Legal Tech",
+                 font=FONT_POWERED, bg=BG, fg=FG_DIM).pack(side="left")
+
+        # Settings button (right side)
+        tk.Button(hdr, text="⚙", font=("Helvetica Neue", 13),
+                  bg=BG, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
+                  activebackground=BG, activeforeground=FG,
+                  command=self._show_settings_dialog).pack(side="right", padx=(0, 10))
+
         self.timer_lbl = tk.Label(hdr, text="00:00:00", font=FONT_TIMER, bg=BG, fg=FG_DIM)
         self.timer_lbl.pack(side="right")
+
         separator(self, color=BORDER)
+
+    def _display_name(self) -> str:
+        """Short display name shown in header logo."""
+        return self.user_name if self.user_name else "Meeting"
 
     def _build_config(self):
         outer = tk.Frame(self, bg=BG, padx=28, pady=14)
@@ -221,7 +267,6 @@ class MeetingRecorder(tk.Tk):
 
         dev_row = tk.Frame(card, bg=BG2)
         dev_row.pack(fill="x")
-
         self._mic_frame = tk.Frame(dev_row, bg=BG2)
         self._mic_frame.pack(side="left", fill="x", expand=True, padx=(0, 16))
         tk.Label(self._mic_frame, text="Välj mikrofonenhet", font=FONT_S,
@@ -264,7 +309,6 @@ class MeetingRecorder(tk.Tk):
                                   state="disabled", command=self._save_output)
         self.save_btn.pack(side="left", padx=(0, 16))
 
-        # Format selector
         fmt_frame = tk.Frame(btn_frame, bg=BG)
         fmt_frame.pack(side="left")
         tk.Label(fmt_frame, text="Format:", font=FONT_S, bg=BG, fg=FG_DIM).pack(side="left", padx=(0, 6))
@@ -298,9 +342,9 @@ class MeetingRecorder(tk.Tk):
                   wrap="word", state="disabled", selectbackground=BORDER,
                   highlightthickness=1, highlightbackground=BORDER)
         self.transcript_box = scrolledtext.ScrolledText(self.text_frame, font=FONT_M, **kw)
-        self.notes_box = scrolledtext.ScrolledText(self.text_frame, font=FONT_B, **kw)
-        self.log_box = scrolledtext.ScrolledText(self.text_frame, font=FONT_MS,
-                                                  fg=FG_DIM, **{k: v for k, v in kw.items() if k != "fg"})
+        self.notes_box      = scrolledtext.ScrolledText(self.text_frame, font=FONT_B, **kw)
+        self.log_box        = scrolledtext.ScrolledText(self.text_frame, font=FONT_MS,
+                                                        fg=FG_DIM, **{k: v for k, v in kw.items() if k != "fg"})
         self.transcript_box.pack(fill="both", expand=True)
         self._switch_tab()
 
@@ -313,6 +357,85 @@ class MeetingRecorder(tk.Tk):
                  bg=BG, fg=FG_DIM, anchor="w", padx=28, pady=8).pack(side="left")
         tk.Label(status_frame, text="Powered by Liljedahl Legal Tech",
                  font=FONT_POWERED, bg=BG, fg=FG_DIM, padx=28, pady=8).pack(side="right")
+
+    # ── First-run / settings dialogs ─────────────────────────────────────────
+
+    def _show_setup_dialog(self):
+        """First-run dialog — must be completed before app is usable."""
+        self._open_name_dialog(
+            title="Välkommen till Meeting Recorder",
+            message=(
+                "Ange ditt namn eller ditt företagsnamn.\n"
+                "Det används i mötesanteckningar och exporterade filer."
+            ),
+            is_first_run=True,
+        )
+
+    def _show_settings_dialog(self):
+        """Settings dialog — accessible via the ⚙ button."""
+        self._open_name_dialog(
+            title="Inställningar",
+            message="Ändra namn eller företagsnamn:",
+            is_first_run=False,
+        )
+
+    def _open_name_dialog(self, title: str, message: str, is_first_run: bool):
+        dlg = tk.Toplevel(self)
+        dlg.title(title)
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        # Center on main window
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width()  - 420) // 2
+        y = self.winfo_y() + (self.winfo_height() - 220) // 2
+        dlg.geometry(f"420x220+{x}+{y}")
+
+        pad = tk.Frame(dlg, bg=BG, padx=32, pady=28)
+        pad.pack(fill="both", expand=True)
+
+        tk.Label(pad, text=title, font=("Helvetica Neue", 13, "bold"),
+                 bg=BG, fg=FG).pack(anchor="w")
+        tk.Label(pad, text=message, font=FONT_S, bg=BG, fg=FG2,
+                 wraplength=356, justify="left").pack(anchor="w", pady=(8, 16))
+
+        entry_var = tk.StringVar(value=self.user_name)
+        entry = tk.Entry(pad, textvariable=entry_var, font=FONT_M,
+                         bg=BG3, fg=FG, insertbackground=FG, relief="flat", bd=0,
+                         highlightthickness=1, highlightbackground=BORDER, highlightcolor=FG2)
+        entry.pack(fill="x", ipady=8)
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        btn_row = tk.Frame(pad, bg=BG)
+        btn_row.pack(fill="x", pady=(16, 0))
+
+        def save():
+            name = entry_var.get().strip()
+            if not name:
+                entry.config(highlightbackground=RED)
+                return
+            self.user_name = name
+            self._config["user_name"] = name
+            save_config(self._config)
+            self._logo_name_lbl.config(text=self._display_name())
+            dlg.destroy()
+
+        tk.Button(btn_row, text="Spara", font=FONT_B,
+                  bg=FG, fg=BG, relief="flat", bd=0, cursor="hand2",
+                  padx=24, pady=8, activebackground=FG3, activeforeground=BG,
+                  command=save).pack(side="right")
+
+        if not is_first_run:
+            tk.Button(btn_row, text="Avbryt", font=FONT_B,
+                      bg=BG3, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
+                      padx=24, pady=8, activebackground=BG4, activeforeground=FG,
+                      command=dlg.destroy).pack(side="right", padx=(0, 8))
+
+        entry.bind("<Return>", lambda _: save())
+        dlg.protocol("WM_DELETE_WINDOW", save if is_first_run else dlg.destroy)
+        dlg.wait_window()
 
     # ── Device handling ───────────────────────────────────────────────────────
 
@@ -541,8 +664,6 @@ class MeetingRecorder(tk.Tk):
                         del mic_buf[:chunk_frames]
                         self.audio_chunks.append(data)
                         self._enqueue_transcription(data, len(self.audio_chunks))
-
-                # Enqueue remaining audio
                 if len(mic_buf) > SAMPLE_RATE:
                     data = np.array(mic_buf, dtype=np.int16)
                     self.audio_chunks.append(data)
@@ -598,7 +719,6 @@ class MeetingRecorder(tk.Tk):
                 fname, language=self.language.get(), task="transcribe",
                 beam_size=5, vad_filter=True,
                 word_timestamps=bool(self.diarization_pipeline))
-
             segments = list(segs)
 
             if self.diarization_pipeline and segments:
@@ -708,8 +828,12 @@ class MeetingRecorder(tk.Tk):
         title        = self.meeting_title.get().strip() or "Möte"
         participants = self.participants.get().strip()
         date_str     = datetime.now().strftime("%Y-%m-%d %H:%M")
-        system = ("Du är en expert på att skriva strukturerade och handlingsbara mötesanteckningar "
-                  "för Liljedahl Advisory AB. Svara alltid på samma språk som transkriptet.")
+        org          = self.user_name or "organisationen"
+
+        system = (
+            f"Du är en expert på att skriva strukturerade och handlingsbara mötesanteckningar "
+            f"för {org}. Svara alltid på samma språk som transkriptet."
+        )
         prompt = (
             f"Analysera transkriptet och generera mötesanteckningar.\n\n"
             f"Möte: {title}\nDatum: {date_str}\n"
@@ -720,7 +844,7 @@ class MeetingRecorder(tk.Tk):
             f"## Sammanfattning\n## Beslut\n"
             f"## Action Points\n| Åtgärd | Ansvarig | Deadline |\n|--------|----------|----------|\n\n"
             f"## Nästa steg\n## Diskussion i sammandrag\n\n"
-            f"---\n*Genererat av Duch's Meeting Recorder · Powered by Liljedahl Legal Tech*"
+            f"---\n*Genererat av {org} · Powered by Liljedahl Legal Tech*"
         )
         try:
             resp = self.anthropic_client.messages.create(
@@ -761,9 +885,10 @@ class MeetingRecorder(tk.Tk):
         if not path:
             return
 
+        org = self.user_name or "Meeting Recorder"
         content_md = (
             f"# {self.meeting_title.get() or 'Möte'}\n"
-            f"*{datetime.now().strftime('%Y-%m-%d %H:%M')} | Mikrofon | Liljedahl Legal Tech*\n\n---\n\n"
+            f"*{datetime.now().strftime('%Y-%m-%d %H:%M')} | {org} | Powered by Liljedahl Legal Tech*\n\n---\n\n"
             f"{self.notes_box.get('1.0', 'end').strip()}\n\n---\n\n## Fullständigt transkript\n\n"
             + "\n".join(self.transcript_parts) + "\n"
         )
@@ -782,17 +907,13 @@ class MeetingRecorder(tk.Tk):
 
     def _save_as_docx(self, path, md_text):
         from docx import Document
-        from docx.shared import Pt, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt
         doc = Document()
-
-        # Collect table lines
         table_rows = []
 
         def flush_table():
             if not table_rows:
                 return
-            # Filter out separator rows (e.g. |---|---|)
             data_rows = [r for r in table_rows if not all(
                 c.strip().replace("-", "").replace(":", "") == "" for c in r)]
             if not data_rows:
@@ -807,7 +928,6 @@ class MeetingRecorder(tk.Tk):
             table_rows.clear()
 
         for line in md_text.splitlines():
-            # Table row
             if line.strip().startswith("|"):
                 cells = [c for c in line.strip().strip("|").split("|")]
                 table_rows.append(cells)
@@ -816,7 +936,6 @@ class MeetingRecorder(tk.Tk):
                 flush_table()
 
             stripped = line.strip()
-
             if stripped.startswith("### "):
                 doc.add_heading(stripped[4:], level=3)
             elif stripped.startswith("## "):
@@ -829,18 +948,15 @@ class MeetingRecorder(tk.Tk):
             elif stripped == "":
                 doc.add_paragraph()
             else:
-                # Handle inline bold/italic markers
                 p = doc.add_paragraph()
-                # Split on ** for bold sections
                 parts = stripped.split("**")
                 for i, part in enumerate(parts):
                     if not part:
                         continue
                     run = p.add_run(part)
-                    if i % 2 == 1:  # odd index = bold
+                    if i % 2 == 1:
                         run.bold = True
-                    # Handle *italic* within non-bold parts
-                    if i % 2 == 0 and part.startswith("*") and part.endswith("*") and len(part) > 2:
+                    elif part.startswith("*") and part.endswith("*") and len(part) > 2:
                         run.text = part[1:-1]
                         run.italic = True
 
@@ -855,13 +971,11 @@ class MeetingRecorder(tk.Tk):
         pdf.add_page()
         pdf.set_margins(20, 20, 20)
 
-        # Strip markdown symbols for clean text
         def clean(text):
             return text.replace("**", "").replace("*", "").replace("`", "")
 
         for line in md_text.splitlines():
             stripped = line.strip()
-
             if stripped.startswith("### "):
                 pdf.set_font("Helvetica", "B", 11)
                 pdf.multi_cell(0, 7, clean(stripped[4:]))
@@ -876,14 +990,12 @@ class MeetingRecorder(tk.Tk):
                 pdf.ln(3)
             elif stripped == "---":
                 pdf.ln(2)
-                x = pdf.get_x()
                 y = pdf.get_y()
                 pdf.line(20, y, pdf.w - 20, y)
                 pdf.ln(3)
             elif stripped == "":
                 pdf.ln(4)
             elif stripped.startswith("|"):
-                # Simple table: just render as text
                 pdf.set_font("Helvetica", size=9)
                 cells = [c.strip() for c in stripped.strip("|").split("|")]
                 pdf.multi_cell(0, 5, "  |  ".join(cells))
