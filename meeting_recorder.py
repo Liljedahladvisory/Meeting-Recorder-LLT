@@ -28,28 +28,35 @@ SAMPLE_RATE   = 16000
 CHANNELS      = 1
 CHUNK_SECONDS = 20
 
-BG       = "#0A0A0A"
-BG2      = "#111111"
-BG3      = "#1A1A1A"
-BG4      = "#222222"
-BORDER   = "#2A2A2A"
-FG       = "#E8E8E8"
-FG2      = "#9A9A9A"
-FG3      = "#D4D4D4"
-FG_DIM   = "#555555"
-RED      = "#C0392B"
-GREEN    = "#27AE60"
-AMBER    = "#D4A017"
+# ── Colour palette ───────────────────────────────────────────────────────────
+BG      = "#0C0C0F"
+BG2     = "#131318"
+BG3     = "#1A1A21"
+BG4     = "#222230"
+BORDER  = "#26262E"
+BORDER2 = "#36364A"
+FG      = "#EDEDF4"
+FG2     = "#8080A0"
+FG3     = "#C8C8DC"
+FG_DIM  = "#44445A"
+ACCENT  = "#5E7BFF"
+ACCENT2 = "#3A5AE8"
+RED     = "#D95050"
+GREEN   = "#3AB870"
 
-FONT_LOGO1   = ("Helvetica Neue", 15, "bold")
-FONT_LOGO2   = ("Helvetica Neue", 15)
+# ── Fonts ────────────────────────────────────────────────────────────────────
+FONT_LOGO1   = ("Helvetica Neue", 14, "bold")
+FONT_LOGO2   = ("Helvetica Neue", 14)
 FONT_POWERED = ("Helvetica Neue", 9, "italic")
+FONT_SECTION = ("Helvetica Neue", 8, "bold")
 FONT_H       = ("Helvetica Neue", 11, "bold")
 FONT_B       = ("Helvetica Neue", 11)
 FONT_S       = ("Helvetica Neue", 10)
+FONT_XS      = ("Helvetica Neue", 9)
 FONT_M       = ("Menlo", 10)
 FONT_MS      = ("Menlo", 9)
-FONT_TIMER   = ("Menlo", 13)
+FONT_TIMER   = ("Menlo", 12)
+FONT_GEAR    = ("Helvetica Neue", 18)
 
 
 def load_config() -> dict:
@@ -82,10 +89,6 @@ def list_audio_devices():
         return []
 
 
-def separator(parent, color=BORDER, padx=0, pady=0):
-    tk.Frame(parent, bg=color, height=1).pack(fill="x", padx=padx, pady=pady)
-
-
 def _set_macos_app_name():
     try:
         from Foundation import NSProcessInfo, NSBundle
@@ -105,13 +108,12 @@ class MeetingRecorder(tk.Tk):
         super().__init__()
         self.title("Meeting Recorder")
         self.configure(bg=BG)
-        self.geometry("900x860")
-        self.minsize(760, 700)
+        self.geometry("920x880")
+        self.minsize(780, 720)
         self.resizable(True, True)
 
-        # Load persistent config
-        self._config     = load_config()
-        self.user_name   = self._config.get("user_name", "")
+        self._config   = load_config()
+        self.user_name = self._config.get("user_name", "")
 
         self.api_key        = tk.StringVar()
         self.meeting_title  = tk.StringVar()
@@ -139,12 +141,11 @@ class MeetingRecorder(tk.Tk):
         self._transcription_worker_thread = None
 
         self._build_ui()
-        self._load_key_from_env()
+        self._load_saved_key()
         self._poll_log()
         self.after(200, self._refresh_devices)
         threading.Thread(target=self._preload_whisper, daemon=True).start()
 
-        # Show first-run setup if no user name is stored
         if not self.user_name:
             self.after(300, self._show_setup_dialog)
 
@@ -159,169 +160,191 @@ class MeetingRecorder(tk.Tk):
         self._build_status()
 
     def _build_header(self):
-        hdr = tk.Frame(self, bg=BG, padx=28, pady=18)
+        hdr = tk.Frame(self, bg=BG, padx=32, pady=20)
         hdr.pack(fill="x")
 
-        logo_frame = tk.Frame(hdr, bg=BG)
-        logo_frame.pack(side="left")
+        left = tk.Frame(hdr, bg=BG)
+        left.pack(side="left", fill="y")
 
+        name_row = tk.Frame(left, bg=BG)
+        name_row.pack(anchor="w")
         self._logo_name_lbl = tk.Label(
-            logo_frame,
-            text=self._display_name(),
-            font=FONT_LOGO1, bg=BG, fg=FG2)
+            name_row, text=self._display_name(),
+            font=FONT_LOGO1, bg=BG, fg=FG)
         self._logo_name_lbl.pack(side="left")
+        tk.Label(name_row, text="  Meeting Recorder",
+                 font=FONT_LOGO2, bg=BG, fg=FG2).pack(side="left")
 
-        tk.Label(logo_frame, text="  Meeting Recorder",
-                 font=FONT_LOGO2, bg=BG, fg=FG3).pack(side="left")
-        tk.Label(logo_frame, text="   Powered by Liljedahl Legal Tech",
-                 font=FONT_POWERED, bg=BG, fg=FG_DIM).pack(side="left")
+        tk.Label(left, text="Powered by Liljedahl Legal Tech",
+                 font=FONT_POWERED, bg=BG, fg=FG_DIM).pack(anchor="w", pady=(3, 0))
 
-        # Settings button (right side)
-        tk.Button(hdr, text="⚙", font=("Helvetica Neue", 13),
-                  bg=BG, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
-                  activebackground=BG, activeforeground=FG,
-                  command=self._show_settings_dialog).pack(side="right", padx=(0, 10))
+        right = tk.Frame(hdr, bg=BG)
+        right.pack(side="right", fill="y")
 
-        self.timer_lbl = tk.Label(hdr, text="00:00:00", font=FONT_TIMER, bg=BG, fg=FG_DIM)
-        self.timer_lbl.pack(side="right")
+        self.timer_lbl = tk.Label(right, text="00:00:00",
+                                  font=FONT_TIMER, bg=BG, fg=FG_DIM)
+        self.timer_lbl.pack(side="right", padx=(16, 0))
 
-        separator(self, color=BORDER)
+        # Gear — Label, no border
+        gear = tk.Label(right, text="⚙", font=FONT_GEAR,
+                        bg=BG, fg=FG_DIM, cursor="hand2")
+        gear.pack(side="right")
+        gear.bind("<Enter>",  lambda _: gear.config(fg=FG))
+        gear.bind("<Leave>",  lambda _: gear.config(fg=FG_DIM))
+        gear.bind("<Button-1>", lambda _: self._show_settings_dialog())
 
-    def _display_name(self) -> str:
-        """Short display name shown in header logo."""
-        return self.user_name if self.user_name else "Meeting"
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
     def _build_config(self):
-        outer = tk.Frame(self, bg=BG, padx=28, pady=14)
+        outer = tk.Frame(self, bg=BG, padx=32, pady=20)
         outer.pack(fill="x")
-        tk.Label(outer, text="KONFIGURATION", font=("Helvetica Neue", 9),
-                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(0, 8))
-        card = tk.Frame(outer, bg=BG2, padx=20, pady=16,
-                        highlightthickness=1, highlightbackground=BORDER)
-        card.pack(fill="x")
+        self._section_label(outer, "KONFIGURATION")
+        card = self._card(outer)
 
-        def field(label, var, show=None, hint=None):
-            row = tk.Frame(card, bg=BG2)
-            row.pack(fill="x", pady=5)
+        def field(parent, label, var, show=None, hint=None):
+            row = tk.Frame(parent, bg=BG2)
+            row.pack(fill="x", pady=6)
             tk.Label(row, text=label, font=FONT_S, bg=BG2, fg=FG2,
-                     width=17, anchor="w").pack(side="left")
+                     width=16, anchor="w").pack(side="left")
             kw = dict(textvariable=var, font=FONT_M, bg=BG3, fg=FG,
                       insertbackground=FG, relief="flat", bd=0,
-                      highlightthickness=1, highlightbackground=BORDER, highlightcolor=FG2)
+                      highlightthickness=1, highlightbackground=BORDER2,
+                      highlightcolor=ACCENT)
             if show:
                 kw["show"] = show
             e = tk.Entry(row, **kw)
-            e.pack(side="left", fill="x", expand=True, ipady=6)
+            e.pack(side="left", fill="x", expand=True, ipady=7)
             if hint:
-                tk.Label(row, text=hint, font=("Helvetica Neue", 9),
-                         bg=BG2, fg=FG_DIM).pack(side="left", padx=8)
+                tk.Label(row, text=hint, font=FONT_XS,
+                         bg=BG2, fg=FG_DIM).pack(side="left", padx=(10, 0))
             return e, row
 
-        self._key_entry, r1 = field("API-nyckel", self.api_key, show="•")
-        tk.Button(r1, text="visa", font=("Helvetica Neue", 9),
-                  bg=BG3, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
-                  padx=8, pady=2, activebackground=BG4, activeforeground=FG,
+        self._key_entry, r1 = field(card, "API-nyckel", self.api_key, show="•")
+        tk.Button(r1, text="visa", font=FONT_XS,
+                  bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
+                  padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
                   command=lambda: self._key_entry.config(
                       show="" if self._key_entry.cget("show") == "•" else "•")
-                  ).pack(side="left", padx=(4, 0))
+                  ).pack(side="left", padx=(6, 0))
 
-        field("Möte / titel", self.meeting_title)
-        field("Deltagare", self.participants, hint="namn, roll — kommaseparerade")
+        field(card, "Möte / titel", self.meeting_title)
+        field(card, "Deltagare", self.participants,
+              hint="namn, roll — kommaseparerade")
 
+        # Language row
         lang_row = tk.Frame(card, bg=BG2)
-        lang_row.pack(fill="x", pady=5)
+        lang_row.pack(fill="x", pady=6)
         tk.Label(lang_row, text="Språk", font=FONT_S, bg=BG2, fg=FG2,
-                 width=17, anchor="w").pack(side="left")
-        for val, label in [("sv", "Svenska"), ("en", "English")]:
-            tk.Radiobutton(lang_row, text=label, variable=self.language, value=val,
-                           font=FONT_S, bg=BG2, fg=FG, selectcolor=BG2,
-                           activebackground=BG2, activeforeground=FG3,
-                           cursor="hand2").pack(side="left", padx=(0, 16))
+                 width=16, anchor="w").pack(side="left")
+        for val, lbl in [("sv", "Svenska"), ("en", "English")]:
+            tk.Radiobutton(lang_row, text=lbl, variable=self.language, value=val,
+                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=BG2,
+                           activebackground=BG2, activeforeground=FG,
+                           cursor="hand2").pack(side="left", padx=(0, 20))
 
+        # Whisper model row
         model_row = tk.Frame(card, bg=BG2)
-        model_row.pack(fill="x", pady=5)
+        model_row.pack(fill="x", pady=6)
         tk.Label(model_row, text="Whisper-modell", font=FONT_S, bg=BG2, fg=FG2,
-                 width=17, anchor="w").pack(side="left")
+                 width=16, anchor="w").pack(side="left")
         for val, lbl, hint in [
             ("small",    "Small",    "snabb"),
             ("medium",   "Medium",   "balanserad"),
-            ("large-v3", "Large v3", "bäst kvalitet, långsammast"),
+            ("large-v3", "Large v3", "bäst kvalitet"),
         ]:
-            col = tk.Frame(model_row, bg=BG2)
-            col.pack(side="left", padx=(0, 4))
-            tk.Radiobutton(col, text=lbl, variable=self.whisper_size, value=val,
-                           font=FONT_S, bg=BG2, fg=FG, selectcolor=BG2,
-                           activebackground=BG2, activeforeground=FG3,
+            grp = tk.Frame(model_row, bg=BG2)
+            grp.pack(side="left", padx=(0, 6))
+            tk.Radiobutton(grp, text=lbl, variable=self.whisper_size, value=val,
+                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=BG2,
+                           activebackground=BG2, activeforeground=FG,
                            cursor="hand2").pack(side="left")
-            tk.Label(col, text=f"({hint})", font=("Helvetica Neue", 9),
-                     bg=BG2, fg=FG_DIM).pack(side="left", padx=(2, 16))
+            tk.Label(grp, text=f"({hint})", font=FONT_XS,
+                     bg=BG2, fg=FG_DIM).pack(side="left", padx=(2, 0))
 
     def _build_audio_source(self):
-        outer = tk.Frame(self, bg=BG, padx=28, pady=6)
+        outer = tk.Frame(self, bg=BG, padx=32, pady=4)
         outer.pack(fill="x")
-        tk.Label(outer, text="MIKROFON", font=("Helvetica Neue", 9),
-                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(0, 8))
-        card = tk.Frame(outer, bg=BG2, padx=20, pady=16,
-                        highlightthickness=1, highlightbackground=BORDER)
-        card.pack(fill="x")
+        self._section_label(outer, "MIKROFON")
+        card = self._card(outer)
 
-        dev_row = tk.Frame(card, bg=BG2)
-        dev_row.pack(fill="x")
-        self._mic_frame = tk.Frame(dev_row, bg=BG2)
-        self._mic_frame.pack(side="left", fill="x", expand=True, padx=(0, 16))
-        tk.Label(self._mic_frame, text="Välj mikrofonenhet", font=FONT_S,
-                 bg=BG2, fg=FG2).pack(anchor="w", pady=(0, 3))
-        self._mic_combo = ttk.Combobox(self._mic_frame, state="readonly", font=FONT_MS, width=50)
-        self._mic_combo.pack(fill="x")
+        tk.Label(card, text="Enhet", font=FONT_S, bg=BG2, fg=FG2).pack(anchor="w", pady=(0, 6))
+
+        combo_row = tk.Frame(card, bg=BG2)
+        combo_row.pack(fill="x")
+
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Dark.TCombobox",
+                        fieldbackground=BG3, background=BG3,
+                        foreground=FG, selectbackground=BG4,
+                        selectforeground=FG, bordercolor=BORDER2,
+                        arrowcolor=FG2, relief="flat")
+
+        self._mic_combo = ttk.Combobox(combo_row, state="readonly",
+                                        font=FONT_MS, style="Dark.TCombobox")
+        self._mic_combo.pack(side="left", fill="x", expand=True)
         self._mic_combo.bind("<<ComboboxSelected>>", self._on_mic_select)
 
-        btn_row = tk.Frame(card, bg=BG2)
-        btn_row.pack(fill="x", pady=(10, 0))
-        tk.Button(btn_row, text="↺  Uppdatera enheter", font=("Helvetica Neue", 9),
-                  bg=BG3, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
-                  padx=10, pady=4, activebackground=BG4, activeforeground=FG,
-                  command=self._refresh_devices).pack(side="right")
+        tk.Button(combo_row, text="↺", font=("Helvetica Neue", 13),
+                  bg=BG3, fg=FG2, relief="flat", bd=0, cursor="hand2",
+                  padx=12, pady=3, activebackground=BG4, activeforeground=FG,
+                  command=self._refresh_devices).pack(side="left", padx=(8, 0))
 
     def _build_buttons(self):
-        btn_frame = tk.Frame(self, bg=BG, padx=28, pady=16)
-        btn_frame.pack(fill="x")
+        outer = tk.Frame(self, bg=BG, padx=32, pady=18)
+        outer.pack(fill="x")
+
+        # Primary action buttons
+        btn_row = tk.Frame(outer, bg=BG)
+        btn_row.pack(fill="x")
 
         self._rec_btn_enabled = True
-        self.rec_btn = tk.Label(btn_frame, text="●  Starta inspelning",
+        self.rec_btn = tk.Label(btn_row, text="●  Starta inspelning",
                                 font=("Helvetica Neue", 12, "bold"),
-                                bg=FG, fg=BG, padx=28, pady=11, cursor="hand2")
+                                bg=FG, fg=BG, padx=26, pady=12, cursor="hand2")
         self.rec_btn.bind("<Button-1>", self._on_rec_btn_click)
-        self.rec_btn.pack(side="left", padx=(0, 10))
+        self.rec_btn.pack(side="left", padx=(0, 8))
 
-        self.notes_btn = tk.Button(btn_frame, text="◆  Generera anteckningar",
+        self.notes_btn = tk.Button(btn_row, text="◆  Generera anteckningar",
                                    font=("Helvetica Neue", 12),
                                    bg=BG3, fg=FG_DIM, relief="flat", bd=0,
-                                   padx=28, pady=11, cursor="hand2",
+                                   padx=26, pady=12, cursor="hand2",
                                    activebackground=BG4, activeforeground=FG,
                                    state="disabled", command=self._generate_notes)
-        self.notes_btn.pack(side="left", padx=(0, 10))
+        self.notes_btn.pack(side="left", padx=(0, 8))
 
-        self.save_btn = tk.Button(btn_frame, text="↓  Spara",
+        self.save_btn = tk.Button(btn_row, text="↓  Spara",
                                   font=("Helvetica Neue", 12),
                                   bg=BG3, fg=FG_DIM, relief="flat", bd=0,
-                                  padx=20, pady=11, cursor="hand2",
+                                  padx=26, pady=12, cursor="hand2",
                                   activebackground=BG4, activeforeground=FG,
                                   state="disabled", command=self._save_output)
-        self.save_btn.pack(side="left", padx=(0, 16))
+        self.save_btn.pack(side="left")
 
-        fmt_frame = tk.Frame(btn_frame, bg=BG)
-        fmt_frame.pack(side="left")
-        tk.Label(fmt_frame, text="Format:", font=FONT_S, bg=BG, fg=FG_DIM).pack(side="left", padx=(0, 6))
-        for val, lbl in [("md", ".md"), ("docx", ".docx"), ("pdf", ".pdf")]:
-            tk.Radiobutton(fmt_frame, text=lbl, variable=self.save_format, value=val,
-                           font=FONT_S, bg=BG, fg=FG2, selectcolor=BG,
-                           activebackground=BG, activeforeground=FG,
-                           cursor="hand2").pack(side="left", padx=(0, 8))
+        # Format selector — own row, clearly separated
+        fmt_row = tk.Frame(outer, bg=BG)
+        fmt_row.pack(fill="x", pady=(12, 0))
 
-        separator(self, color=BORDER)
+        tk.Label(fmt_row, text="Exportformat", font=FONT_XS,
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(2, 14))
+
+        for val, lbl, desc in [
+            ("md",   ".md",   "Markdown"),
+            ("docx", ".docx", "Word"),
+            ("pdf",  ".pdf",  "PDF"),
+        ]:
+            btn = tk.Radiobutton(
+                fmt_row, text=f"{lbl}  {desc}",
+                variable=self.save_format, value=val,
+                font=FONT_S, bg=BG, fg=FG2, selectcolor=BG,
+                activebackground=BG, activeforeground=FG,
+                cursor="hand2")
+            btn.pack(side="left", padx=(0, 22))
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
     def _build_tabs(self):
-        tab_bar = tk.Frame(self, bg=BG, padx=28)
+        tab_bar = tk.Frame(self, bg=BG, padx=32)
         tab_bar.pack(fill="x")
         self.active_tab = tk.StringVar(value="transcript")
         for label, key in [("Transkript", "transcript"),
@@ -331,132 +354,50 @@ class MeetingRecorder(tk.Tk):
                            font=FONT_B, bg=BG, fg=FG_DIM, selectcolor=BG,
                            activebackground=BG, activeforeground=FG,
                            indicatoron=False, relief="flat", bd=0,
-                           padx=16, pady=10, cursor="hand2",
+                           padx=18, pady=12, cursor="hand2",
                            command=self._switch_tab).pack(side="left")
-        separator(self, color=BORDER)
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
-        self.text_frame = tk.Frame(self, bg=BG, padx=28, pady=12)
+        self.text_frame = tk.Frame(self, bg=BG, padx=32, pady=14)
         self.text_frame.pack(fill="both", expand=True)
 
-        kw = dict(bg=BG2, fg=FG, insertbackground=FG, relief="flat", bd=0,
-                  wrap="word", state="disabled", selectbackground=BORDER,
+        kw = dict(bg=BG2, fg=FG3, insertbackground=FG, relief="flat", bd=0,
+                  wrap="word", state="disabled", selectbackground=BORDER2,
                   highlightthickness=1, highlightbackground=BORDER)
         self.transcript_box = scrolledtext.ScrolledText(self.text_frame, font=FONT_M, **kw)
         self.notes_box      = scrolledtext.ScrolledText(self.text_frame, font=FONT_B, **kw)
-        self.log_box        = scrolledtext.ScrolledText(self.text_frame, font=FONT_MS,
-                                                        fg=FG_DIM, **{k: v for k, v in kw.items() if k != "fg"})
+        self.log_box        = scrolledtext.ScrolledText(
+            self.text_frame, font=FONT_MS, fg=FG2,
+            **{k: v for k, v in kw.items() if k not in ("fg",)})
         self.transcript_box.pack(fill="both", expand=True)
         self._switch_tab()
 
     def _build_status(self):
-        separator(self, color=BORDER)
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
         self.status_var = tk.StringVar(value="Redo.")
-        status_frame = tk.Frame(self, bg=BG)
-        status_frame.pack(fill="x")
-        tk.Label(status_frame, textvariable=self.status_var, font=("Helvetica Neue", 10),
-                 bg=BG, fg=FG_DIM, anchor="w", padx=28, pady=8).pack(side="left")
-        tk.Label(status_frame, text="Powered by Liljedahl Legal Tech",
-                 font=FONT_POWERED, bg=BG, fg=FG_DIM, padx=28, pady=8).pack(side="right")
-
-    # ── First-run / settings dialogs ─────────────────────────────────────────
-
-    def _show_setup_dialog(self):
-        """First-run dialog — must be completed before app is usable."""
-        self._open_name_dialog(
-            title="Välkommen till Meeting Recorder",
-            message=(
-                "Ange ditt namn eller ditt företagsnamn.\n"
-                "Det används i mötesanteckningar och exporterade filer."
-            ),
-            is_first_run=True,
-        )
-
-    def _show_settings_dialog(self):
-        """Settings dialog — accessible via the ⚙ button."""
-        self._open_name_dialog(
-            title="Inställningar",
-            message="Ändra namn eller företagsnamn:",
-            is_first_run=False,
-        )
-
-    def _open_name_dialog(self, title: str, message: str, is_first_run: bool):
-        dlg = tk.Toplevel(self)
-        dlg.title(title)
-        dlg.configure(bg=BG)
-        dlg.resizable(False, False)
-        dlg.grab_set()
-
-        # Center on main window
-        self.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width()  - 420) // 2
-        y = self.winfo_y() + (self.winfo_height() - 220) // 2
-        dlg.geometry(f"420x220+{x}+{y}")
-
-        pad = tk.Frame(dlg, bg=BG, padx=32, pady=28)
-        pad.pack(fill="both", expand=True)
-
-        tk.Label(pad, text=title, font=("Helvetica Neue", 13, "bold"),
-                 bg=BG, fg=FG).pack(anchor="w")
-        tk.Label(pad, text=message, font=FONT_S, bg=BG, fg=FG2,
-                 wraplength=356, justify="left").pack(anchor="w", pady=(8, 16))
-
-        entry_var = tk.StringVar(value=self.user_name)
-        entry = tk.Entry(pad, textvariable=entry_var, font=FONT_M,
-                         bg=BG3, fg=FG, insertbackground=FG, relief="flat", bd=0,
-                         highlightthickness=1, highlightbackground=BORDER, highlightcolor=FG2)
-        entry.pack(fill="x", ipady=8)
-        entry.focus_set()
-        entry.select_range(0, "end")
-
-        btn_row = tk.Frame(pad, bg=BG)
-        btn_row.pack(fill="x", pady=(16, 0))
-
-        def save():
-            name = entry_var.get().strip()
-            if not name:
-                entry.config(highlightbackground=RED)
-                return
-            self.user_name = name
-            self._config["user_name"] = name
-            save_config(self._config)
-            self._logo_name_lbl.config(text=self._display_name())
-            dlg.destroy()
-
-        tk.Button(btn_row, text="Spara", font=FONT_B,
-                  bg=FG, fg=BG, relief="flat", bd=0, cursor="hand2",
-                  padx=24, pady=8, activebackground=FG3, activeforeground=BG,
-                  command=save).pack(side="right")
-
-        if not is_first_run:
-            tk.Button(btn_row, text="Avbryt", font=FONT_B,
-                      bg=BG3, fg=FG_DIM, relief="flat", bd=0, cursor="hand2",
-                      padx=24, pady=8, activebackground=BG4, activeforeground=FG,
-                      command=dlg.destroy).pack(side="right", padx=(0, 8))
-
-        entry.bind("<Return>", lambda _: save())
-        dlg.protocol("WM_DELETE_WINDOW", save if is_first_run else dlg.destroy)
-        dlg.wait_window()
-
-    # ── Device handling ───────────────────────────────────────────────────────
-
-    def _refresh_devices(self):
-        self._devices = list_audio_devices()
-        if not self._devices:
-            self._set_status("sounddevice ej tillgängligt")
-            return
-        names = [f"{d['name']}  [{d['index']}]" for d in self._devices]
-        self._mic_combo["values"] = names
-        if self._devices:
-            self._mic_combo.current(0)
-            self.mic_device_idx.set(self._devices[0]["index"])
-        self._log(f"{len(self._devices)} enheter hittade.")
-
-    def _on_mic_select(self, _=None):
-        idx = self._mic_combo.current()
-        if idx >= 0:
-            self.mic_device_idx.set(self._devices[idx]["index"])
+        bar = tk.Frame(self, bg=BG2)
+        bar.pack(fill="x")
+        tk.Label(bar, textvariable=self.status_var, font=FONT_XS,
+                 bg=BG2, fg=FG2, anchor="w", padx=32, pady=8).pack(side="left")
+        tk.Label(bar, text="Powered by Liljedahl Legal Tech",
+                 font=FONT_POWERED, bg=BG2, fg=FG_DIM, padx=32, pady=8).pack(side="right")
 
     # ── UI helpers ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _section_label(parent, text):
+        tk.Label(parent, text=text, font=FONT_SECTION,
+                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
+
+    @staticmethod
+    def _card(parent):
+        card = tk.Frame(parent, bg=BG2, padx=22, pady=18,
+                        highlightthickness=1, highlightbackground=BORDER)
+        card.pack(fill="x", pady=(0, 4))
+        return card
+
+    def _display_name(self) -> str:
+        return self.user_name if self.user_name else "Meeting"
 
     def _switch_tab(self):
         for w in (self.transcript_box, self.notes_box, self.log_box):
@@ -488,7 +429,10 @@ class MeetingRecorder(tk.Tk):
         widget.delete("1.0", "end")
         widget.config(state="disabled")
 
-    def _load_key_from_env(self):
+    # ── Key management ────────────────────────────────────────────────────────
+
+    def _load_saved_key(self):
+        """Load API key from keychain only — never from environment variables."""
         if _KEYRING_AVAILABLE:
             try:
                 saved = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
@@ -498,10 +442,7 @@ class MeetingRecorder(tk.Tk):
                     return
             except Exception:
                 pass
-        key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if key:
-            self.api_key.set(key)
-            self._log("API-nyckel laddad från miljövariabel.")
+        self._log("Ingen sparad API-nyckel hittades.")
 
     def _save_key_to_keychain(self, key: str):
         if _KEYRING_AVAILABLE:
@@ -509,6 +450,99 @@ class MeetingRecorder(tk.Tk):
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
             except Exception:
                 pass
+
+    # ── First-run / settings dialogs ─────────────────────────────────────────
+
+    def _show_setup_dialog(self):
+        self._open_name_dialog(
+            title="Välkommen till Meeting Recorder",
+            message="Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
+            is_first_run=True,
+        )
+
+    def _show_settings_dialog(self):
+        self._open_name_dialog(
+            title="Inställningar",
+            message="Ändra namn eller företagsnamn:",
+            is_first_run=False,
+        )
+
+    def _open_name_dialog(self, title: str, message: str, is_first_run: bool):
+        dlg = tk.Toplevel(self)
+        dlg.title(title)
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        self.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width()  - 440) // 2
+        y = self.winfo_y() + (self.winfo_height() - 240) // 2
+        dlg.geometry(f"440x240+{x}+{y}")
+
+        pad = tk.Frame(dlg, bg=BG, padx=36, pady=32)
+        pad.pack(fill="both", expand=True)
+
+        tk.Label(pad, text=title, font=("Helvetica Neue", 13, "bold"),
+                 bg=BG, fg=FG).pack(anchor="w")
+        tk.Label(pad, text=message, font=FONT_S, bg=BG, fg=FG2,
+                 wraplength=368, justify="left").pack(anchor="w", pady=(8, 18))
+
+        entry_var = tk.StringVar(value=self.user_name)
+        entry = tk.Entry(pad, textvariable=entry_var, font=FONT_M,
+                         bg=BG3, fg=FG, insertbackground=FG, relief="flat", bd=0,
+                         highlightthickness=1, highlightbackground=BORDER2,
+                         highlightcolor=ACCENT)
+        entry.pack(fill="x", ipady=9)
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        btn_row = tk.Frame(pad, bg=BG)
+        btn_row.pack(fill="x", pady=(18, 0))
+
+        def save():
+            name = entry_var.get().strip()
+            if not name:
+                entry.config(highlightbackground=RED)
+                return
+            self.user_name = name
+            self._config["user_name"] = name
+            save_config(self._config)
+            self._logo_name_lbl.config(text=self._display_name())
+            dlg.destroy()
+
+        tk.Button(btn_row, text="Spara", font=FONT_B,
+                  bg=ACCENT, fg=FG, relief="flat", bd=0, cursor="hand2",
+                  padx=24, pady=8, activebackground=ACCENT2, activeforeground=FG,
+                  command=save).pack(side="right")
+
+        if not is_first_run:
+            tk.Button(btn_row, text="Avbryt", font=FONT_B,
+                      bg=BG3, fg=FG2, relief="flat", bd=0, cursor="hand2",
+                      padx=24, pady=8, activebackground=BG4, activeforeground=FG,
+                      command=dlg.destroy).pack(side="right", padx=(0, 8))
+
+        entry.bind("<Return>", lambda _: save())
+        dlg.protocol("WM_DELETE_WINDOW", save if is_first_run else dlg.destroy)
+        dlg.wait_window()
+
+    # ── Device handling ───────────────────────────────────────────────────────
+
+    def _refresh_devices(self):
+        self._devices = list_audio_devices()
+        if not self._devices:
+            self._set_status("sounddevice ej tillgängligt")
+            return
+        names = [f"{d['name']}  [{d['index']}]" for d in self._devices]
+        self._mic_combo["values"] = names
+        if self._devices:
+            self._mic_combo.current(0)
+            self.mic_device_idx.set(self._devices[0]["index"])
+        self._log(f"{len(self._devices)} enheter hittade.")
+
+    def _on_mic_select(self, _=None):
+        idx = self._mic_combo.current()
+        if idx >= 0:
+            self.mic_device_idx.set(self._devices[idx]["index"])
 
     # ── Whisper loading ───────────────────────────────────────────────────────
 
@@ -518,12 +552,12 @@ class MeetingRecorder(tk.Tk):
         try:
             from faster_whisper import WhisperModel
             from pyannote.audio import Pipeline
-            self._log(f"Förladdar Whisper {size} i bakgrunden…")
-            self.after(0, lambda: self._set_status(f"Laddar Whisper {size}…  (knappen aktiveras när den är klar)"))
+            self._log(f"Förladdar Whisper {size}…")
+            self.after(0, lambda: self._set_status(
+                f"Laddar Whisper {size}…  (inspelningsknappen aktiveras när den är klar)"))
             self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
             self._loaded_whisper_size = size
             self._log("Whisper redo. Laddar talarseparation…")
-            self.after(0, lambda: self._set_status("Laddar talarseparation…"))
             hf_token = os.environ.get("HF_TOKEN", "")
             if hf_token:
                 self.diarization_pipeline = Pipeline.from_pretrained(
@@ -607,7 +641,7 @@ class MeetingRecorder(tk.Tk):
             target=self._transcription_worker, daemon=True)
         self._transcription_worker_thread.start()
 
-        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="white")
+        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg=FG)
         self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self.save_btn.config(state="disabled", bg=BG3, fg=FG_DIM)
         self._set_status("● Spelar in  —  Mikrofon")
@@ -624,7 +658,7 @@ class MeetingRecorder(tk.Tk):
         self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG)
         self._set_rec_btn_enabled(False)
         self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
-        self._log("Ljud stoppat. Väntar på att transkription ska slutföras…")
+        self._log("Ljud stoppat. Väntar på transkription…")
         threading.Thread(target=self._wait_for_transcription, daemon=True).start()
 
     def _wait_for_transcription(self):
@@ -684,9 +718,8 @@ class MeetingRecorder(tk.Tk):
 
     def _update_pending_status(self):
         if self.pending_transcriptions > 0 and not self.recording:
-            self._set_status(
-                f"Transkriberar — {self.pending_transcriptions} "
-                f"{'del' if self.pending_transcriptions == 1 else 'delar'} kvar…")
+            n = self.pending_transcriptions
+            self._set_status(f"Transkriberar — {n} {'del' if n == 1 else 'delar'} kvar…")
 
     def _transcription_worker(self):
         while True:
@@ -735,8 +768,7 @@ class MeetingRecorder(tk.Tk):
                 self.transcript_parts.append(text)
                 line = f"[{ts}]\n{text}\n\n"
                 self.after(0, lambda t=line: self._append(self.transcript_box, t, FG3))
-                preview = text.replace("\n", " ")
-                self._log(f"Del {idx} ({info.language}): {preview[:80]}…")
+                self._log(f"Del {idx} ({info.language}): {text.replace(chr(10),' ')[:80]}…")
             else:
                 self._log(f"Del {idx}: tyst.")
         except Exception as e:
@@ -760,22 +792,20 @@ class MeetingRecorder(tk.Tk):
 
             diarization_kw = {"num_speakers": n_speakers} if n_speakers else {}
             diarization = self.diarization_pipeline(fname, **diarization_kw)
-
             turns = sorted(
-                [(turn.start, turn.end, speaker)
-                 for turn, _, speaker in diarization.itertracks(yield_label=True)],
-                key=lambda x: x[0],
-            )
+                [(t.start, t.end, spk)
+                 for t, _, spk in diarization.itertracks(yield_label=True)],
+                key=lambda x: x[0])
 
             def find_speaker(t: float) -> str:
                 for start, end, spk in turns:
                     if start <= t <= end:
                         return spk
                 if turns:
-                    return min(turns, key=lambda x: min(abs(x[0] - t), abs(x[1] - t)))[2]
+                    return min(turns, key=lambda x: min(abs(x[0]-t), abs(x[1]-t)))[2]
                 return "OKÄND"
 
-            word_entries: list[tuple[float, float, str]] = []
+            word_entries = []
             for seg in segments:
                 if hasattr(seg, "words") and seg.words:
                     for w in seg.words:
@@ -786,29 +816,23 @@ class MeetingRecorder(tk.Tk):
             if not word_entries:
                 return " ".join(s.text for s in segments).strip()
 
-            labeled: list[tuple[str, str]] = [
-                (find_speaker((s + e) / 2), w) for s, e, w in word_entries
-            ]
+            labeled = [(find_speaker((s+e)/2), w) for s, e, w in word_entries]
 
-            lines: list[str] = []
-            current_speaker: str | None = None
-            current_words: list[str] = []
-            for speaker, word in labeled:
-                if speaker != current_speaker:
-                    if current_words:
-                        lines.append(f"**{current_speaker}:** {''.join(current_words).strip()}")
-                    current_speaker = speaker
-                    current_words = [word]
+            lines, cur_spk, cur_words = [], None, []
+            for spk, word in labeled:
+                if spk != cur_spk:
+                    if cur_words:
+                        lines.append(f"**{cur_spk}:** {''.join(cur_words).strip()}")
+                    cur_spk, cur_words = spk, [word]
                 else:
-                    current_words.append(word)
-            if current_words:
-                lines.append(f"**{current_speaker}:** {''.join(current_words).strip()}")
+                    cur_words.append(word)
+            if cur_words:
+                lines.append(f"**{cur_spk}:** {''.join(cur_words).strip()}")
 
             result = "\n".join(lines)
             return result if result.strip() else " ".join(w for _, _, w in word_entries)
-
         except Exception as e:
-            self._log(f"Diariseringsfel: {e} — faller tillbaka på vanlig text.")
+            self._log(f"Diariseringsfel: {e}")
             return " ".join(s.text for s in segments).strip()
 
     # ── Notes generation ──────────────────────────────────────────────────────
@@ -875,9 +899,9 @@ class MeetingRecorder(tk.Tk):
 
         ext_map = {"md": ".md", "docx": ".docx", "pdf": ".pdf"}
         ft_map  = {
-            "md":   [("Markdown", "*.md"), ("Alla", "*.*")],
+            "md":   [("Markdown", "*.md"),   ("Alla", "*.*")],
             "docx": [("Word-dokument", "*.docx"), ("Alla", "*.*")],
-            "pdf":  [("PDF", "*.pdf"), ("Alla", "*.*")],
+            "pdf":  [("PDF", "*.pdf"),        ("Alla", "*.*")],
         }
         path = filedialog.asksaveasfilename(
             defaultextension=ext_map[fmt], initialfile=default,
@@ -888,7 +912,7 @@ class MeetingRecorder(tk.Tk):
         org = self.user_name or "Meeting Recorder"
         content_md = (
             f"# {self.meeting_title.get() or 'Möte'}\n"
-            f"*{datetime.now().strftime('%Y-%m-%d %H:%M')} | {org} | Powered by Liljedahl Legal Tech*\n\n---\n\n"
+            f"*{datetime.now().strftime('%Y-%m-%d %H:%M')} · {org} · Powered by Liljedahl Legal Tech*\n\n---\n\n"
             f"{self.notes_box.get('1.0', 'end').strip()}\n\n---\n\n## Fullständigt transkript\n\n"
             + "\n".join(self.transcript_parts) + "\n"
         )
@@ -915,7 +939,7 @@ class MeetingRecorder(tk.Tk):
             if not table_rows:
                 return
             data_rows = [r for r in table_rows if not all(
-                c.strip().replace("-", "").replace(":", "") == "" for c in r)]
+                c.strip().replace("-","").replace(":","") == "" for c in r)]
             if not data_rows:
                 table_rows.clear()
                 return
@@ -929,87 +953,61 @@ class MeetingRecorder(tk.Tk):
 
         for line in md_text.splitlines():
             if line.strip().startswith("|"):
-                cells = [c for c in line.strip().strip("|").split("|")]
-                table_rows.append(cells)
+                table_rows.append([c for c in line.strip().strip("|").split("|")])
                 continue
-            else:
-                flush_table()
-
-            stripped = line.strip()
-            if stripped.startswith("### "):
-                doc.add_heading(stripped[4:], level=3)
-            elif stripped.startswith("## "):
-                doc.add_heading(stripped[3:], level=2)
-            elif stripped.startswith("# "):
-                doc.add_heading(stripped[2:], level=1)
-            elif stripped == "---":
-                p = doc.add_paragraph()
-                p.paragraph_format.space_after = Pt(6)
-            elif stripped == "":
+            flush_table()
+            s = line.strip()
+            if s.startswith("### "):   doc.add_heading(s[4:], level=3)
+            elif s.startswith("## "): doc.add_heading(s[3:], level=2)
+            elif s.startswith("# "):  doc.add_heading(s[2:], level=1)
+            elif s == "---":
+                p = doc.add_paragraph(); p.paragraph_format.space_after = Pt(6)
+            elif s == "":
                 doc.add_paragraph()
             else:
                 p = doc.add_paragraph()
-                parts = stripped.split("**")
-                for i, part in enumerate(parts):
-                    if not part:
-                        continue
+                for i, part in enumerate(s.split("**")):
+                    if not part: continue
                     run = p.add_run(part)
-                    if i % 2 == 1:
-                        run.bold = True
+                    if i % 2 == 1: run.bold = True
                     elif part.startswith("*") and part.endswith("*") and len(part) > 2:
-                        run.text = part[1:-1]
-                        run.italic = True
-
+                        run.text = part[1:-1]; run.italic = True
         flush_table()
         doc.save(path)
 
     def _save_as_pdf(self, path, md_text):
         from fpdf import FPDF
-
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
         pdf.set_margins(20, 20, 20)
 
-        def clean(text):
-            return text.replace("**", "").replace("*", "").replace("`", "")
+        def clean(t): return t.replace("**","").replace("*","").replace("`","")
 
         for line in md_text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("### "):
-                pdf.set_font("Helvetica", "B", 11)
-                pdf.multi_cell(0, 7, clean(stripped[4:]))
-                pdf.ln(1)
-            elif stripped.startswith("## "):
-                pdf.set_font("Helvetica", "B", 13)
-                pdf.multi_cell(0, 8, clean(stripped[3:]))
-                pdf.ln(2)
-            elif stripped.startswith("# "):
-                pdf.set_font("Helvetica", "B", 16)
-                pdf.multi_cell(0, 10, clean(stripped[2:]))
-                pdf.ln(3)
-            elif stripped == "---":
-                pdf.ln(2)
-                y = pdf.get_y()
-                pdf.line(20, y, pdf.w - 20, y)
-                pdf.ln(3)
-            elif stripped == "":
+            s = line.strip()
+            if s.startswith("### "):
+                pdf.set_font("Helvetica","B",11); pdf.multi_cell(0,7,clean(s[4:])); pdf.ln(1)
+            elif s.startswith("## "):
+                pdf.set_font("Helvetica","B",13); pdf.multi_cell(0,8,clean(s[3:])); pdf.ln(2)
+            elif s.startswith("# "):
+                pdf.set_font("Helvetica","B",16); pdf.multi_cell(0,10,clean(s[2:])); pdf.ln(3)
+            elif s == "---":
+                pdf.ln(2); y=pdf.get_y(); pdf.line(20,y,pdf.w-20,y); pdf.ln(3)
+            elif s == "":
                 pdf.ln(4)
-            elif stripped.startswith("|"):
-                pdf.set_font("Helvetica", size=9)
-                cells = [c.strip() for c in stripped.strip("|").split("|")]
-                pdf.multi_cell(0, 5, "  |  ".join(cells))
+            elif s.startswith("|"):
+                pdf.set_font("Helvetica",size=9)
+                cells=[c.strip() for c in s.strip("|").split("|")]
+                pdf.multi_cell(0,5,"  |  ".join(cells))
             else:
-                pdf.set_font("Helvetica", size=10)
-                pdf.multi_cell(0, 6, clean(stripped))
-
+                pdf.set_font("Helvetica",size=10); pdf.multi_cell(0,6,clean(s))
         pdf.output(path)
 
     # ── Timer ─────────────────────────────────────────────────────────────────
 
     def _tick(self):
-        if not self.recording:
-            return
+        if not self.recording: return
         h, r = divmod(self.total_seconds, 3600)
         m, s = divmod(r, 60)
         self.timer_lbl.config(text=f"{h:02d}:{m:02d}:{s:02d}", fg=RED)
