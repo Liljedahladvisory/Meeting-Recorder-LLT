@@ -33,12 +33,12 @@ BG      = "#0C0C0F"
 BG2     = "#131318"
 BG3     = "#1A1A21"
 BG4     = "#222230"
-BORDER  = "#26262E"
-BORDER2 = "#36364A"
-FG      = "#EDEDF4"
-FG2     = "#8080A0"
-FG3     = "#C8C8DC"
-FG_DIM  = "#44445A"
+BORDER  = "#2E2E3A"
+BORDER2 = "#44446A"
+FG      = "#EFEFF6"   # primary text
+FG2     = "#B0B0CC"   # secondary text — field labels, section headers
+FG3     = "#D8D8EC"   # emphasized text — transcript content
+FG_DIM  = "#707090"   # tertiary — hints, "Powered by", tab inactive
 ACCENT  = "#5E7BFF"
 ACCENT2 = "#3A5AE8"
 RED     = "#D95050"
@@ -259,7 +259,7 @@ class MeetingRecorder(tk.Tk):
                            activebackground=BG2, activeforeground=FG,
                            cursor="hand2").pack(side="left")
             tk.Label(grp, text=f"({hint})", font=FONT_XS,
-                     bg=BG2, fg=FG_DIM).pack(side="left", padx=(2, 0))
+                     bg=BG2, fg=FG2).pack(side="left", padx=(2, 0))
 
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=4)
@@ -326,7 +326,7 @@ class MeetingRecorder(tk.Tk):
         fmt_row.pack(fill="x", pady=(12, 0))
 
         tk.Label(fmt_row, text="Exportformat", font=FONT_XS,
-                 bg=BG, fg=FG_DIM).pack(side="left", padx=(2, 14))
+                 bg=BG, fg=FG2).pack(side="left", padx=(2, 14))
 
         for val, lbl, desc in [
             ("md",   ".md",   "Markdown"),
@@ -336,7 +336,7 @@ class MeetingRecorder(tk.Tk):
             btn = tk.Radiobutton(
                 fmt_row, text=f"{lbl}  {desc}",
                 variable=self.save_format, value=val,
-                font=FONT_S, bg=BG, fg=FG2, selectcolor=BG,
+                font=FONT_S, bg=BG, fg=FG3, selectcolor=BG,
                 activebackground=BG, activeforeground=FG,
                 cursor="hand2")
             btn.pack(side="left", padx=(0, 22))
@@ -351,7 +351,7 @@ class MeetingRecorder(tk.Tk):
                             ("Mötesanteckningar", "notes"),
                             ("Log", "log")]:
             tk.Radiobutton(tab_bar, text=label, variable=self.active_tab, value=key,
-                           font=FONT_B, bg=BG, fg=FG_DIM, selectcolor=BG,
+                           font=FONT_B, bg=BG, fg=FG2, selectcolor=BG,
                            activebackground=BG, activeforeground=FG,
                            indicatoron=False, relief="flat", bd=0,
                            padx=18, pady=12, cursor="hand2",
@@ -387,7 +387,7 @@ class MeetingRecorder(tk.Tk):
     @staticmethod
     def _section_label(parent, text):
         tk.Label(parent, text=text, font=FONT_SECTION,
-                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(0, 10))
+                 bg=BG, fg=FG2).pack(anchor="w", pady=(0, 10))
 
     @staticmethod
     def _card(parent):
