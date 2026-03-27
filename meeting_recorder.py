@@ -987,31 +987,49 @@ class MeetingRecorder(tk.Tk):
 
     def _save_as_pdf(self, path, md_text):
         from fpdf import FPDF
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
-        pdf.set_margins(20, 20, 20)
 
-        def clean(t): return t.replace("**","").replace("*","").replace("`","")
+        # Margins must be set BEFORE add_page()
+        pdf = FPDF()
+        pdf.set_margins(20, 20, 20)
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+
+        # Strip markdown markers; keep text readable
+        def clean(t):
+            return t.replace("**", "").replace("*", "").replace("`", "").strip()
+
+        # Effective page width = page width minus left+right margins
+        pw = pdf.w - 40  # 20mm each side
 
         for line in md_text.splitlines():
             s = line.strip()
             if s.startswith("### "):
-                pdf.set_font("Helvetica","B",11); pdf.multi_cell(0,7,clean(s[4:])); pdf.ln(1)
+                pdf.set_font("Helvetica", "B", 11)
+                pdf.multi_cell(pw, 7, clean(s[4:]))
+                pdf.ln(1)
             elif s.startswith("## "):
-                pdf.set_font("Helvetica","B",13); pdf.multi_cell(0,8,clean(s[3:])); pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 13)
+                pdf.multi_cell(pw, 8, clean(s[3:]))
+                pdf.ln(2)
             elif s.startswith("# "):
-                pdf.set_font("Helvetica","B",16); pdf.multi_cell(0,10,clean(s[2:])); pdf.ln(3)
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.multi_cell(pw, 10, clean(s[2:]))
+                pdf.ln(3)
             elif s == "---":
-                pdf.ln(2); y=pdf.get_y(); pdf.line(20,y,pdf.w-20,y); pdf.ln(3)
+                pdf.ln(2)
+                y = pdf.get_y()
+                pdf.line(20, y, pdf.w - 20, y)
+                pdf.ln(3)
             elif s == "":
                 pdf.ln(4)
             elif s.startswith("|"):
-                pdf.set_font("Helvetica",size=9)
-                cells=[c.strip() for c in s.strip("|").split("|")]
-                pdf.multi_cell(0,5,"  |  ".join(cells))
+                pdf.set_font("Helvetica", size=9)
+                cells = [c.strip() for c in s.strip("|").split("|")]
+                pdf.multi_cell(pw, 5, "  |  ".join(cells))
             else:
-                pdf.set_font("Helvetica",size=10); pdf.multi_cell(0,6,clean(s))
+                pdf.set_font("Helvetica", size=10)
+                pdf.multi_cell(pw, 6, clean(s))
+
         pdf.output(path)
 
     # ── Timer ─────────────────────────────────────────────────────────────────
