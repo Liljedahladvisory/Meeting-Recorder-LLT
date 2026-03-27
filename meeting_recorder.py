@@ -988,47 +988,52 @@ class MeetingRecorder(tk.Tk):
     def _save_as_pdf(self, path, md_text):
         from fpdf import FPDF
 
-        # Margins must be set BEFORE add_page()
+        # Margins MUST be set before add_page()
         pdf = FPDF()
-        pdf.set_margins(20, 20, 20)
-        pdf.set_auto_page_break(auto=True, margin=20)
+        L, R, T = 22, 22, 22
+        pdf.set_margins(L, T, R)
+        pdf.set_auto_page_break(auto=True, margin=22)
         pdf.add_page()
 
-        # Strip markdown markers; keep text readable
+        # Usable width
+        pw = pdf.w - L - R
+
         def clean(t):
             return t.replace("**", "").replace("*", "").replace("`", "").strip()
 
-        # Effective page width = page width minus left+right margins
-        pw = pdf.w - 40  # 20mm each side
+        def is_table_separator(s):
+            # Skip markdown header-separator rows like | --- | --- |
+            return all(c in "-|: " for c in s)
+
+        def write(font_style, size, line_h, text, extra_ln=0):
+            pdf.set_font("Helvetica", font_style, size)
+            pdf.set_x(L)  # always reset to left margin
+            pdf.multi_cell(pw, line_h, text, align="L")
+            if extra_ln:
+                pdf.ln(extra_ln)
 
         for line in md_text.splitlines():
             s = line.strip()
-            if s.startswith("### "):
-                pdf.set_font("Helvetica", "B", 11)
-                pdf.multi_cell(pw, 7, clean(s[4:]))
-                pdf.ln(1)
-            elif s.startswith("## "):
-                pdf.set_font("Helvetica", "B", 13)
-                pdf.multi_cell(pw, 8, clean(s[3:]))
-                pdf.ln(2)
-            elif s.startswith("# "):
-                pdf.set_font("Helvetica", "B", 16)
-                pdf.multi_cell(pw, 10, clean(s[2:]))
-                pdf.ln(3)
+            if not s:
+                pdf.ln(4)
             elif s == "---":
                 pdf.ln(2)
                 y = pdf.get_y()
-                pdf.line(20, y, pdf.w - 20, y)
-                pdf.ln(3)
-            elif s == "":
+                pdf.line(L, y, pdf.w - R, y)
                 pdf.ln(4)
+            elif s.startswith("# "):
+                write("B", 16, 10, clean(s[2:]), extra_ln=3)
+            elif s.startswith("## "):
+                write("B", 13, 8, clean(s[3:]), extra_ln=2)
+            elif s.startswith("### "):
+                write("B", 11, 7, clean(s[4:]), extra_ln=1)
             elif s.startswith("|"):
-                pdf.set_font("Helvetica", size=9)
+                if is_table_separator(s):
+                    continue  # skip | --- | --- | rows
                 cells = [c.strip() for c in s.strip("|").split("|")]
-                pdf.multi_cell(pw, 5, "  |  ".join(cells))
+                write("", 9, 5, "   ".join(cells))
             else:
-                pdf.set_font("Helvetica", size=10)
-                pdf.multi_cell(pw, 6, clean(s))
+                write("", 10, 6, clean(s))
 
         pdf.output(path)
 
