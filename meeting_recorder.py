@@ -345,8 +345,8 @@ class MeetingRecorder(tk.Tk):
                 variable=self.save_format, value=val,
                 font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
                 activebackground=BG4, activeforeground=FG,
-                indicatoron=False, relief="flat", bd=0,
-                padx=12, pady=4, cursor="hand2")
+                indicatoron=False, relief="solid", bd=1,
+                padx=10, pady=3, cursor="hand2")
             btn.pack(side="left", padx=(0, 6))
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
