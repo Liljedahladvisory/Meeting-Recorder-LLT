@@ -100,12 +100,12 @@ class RoundedButton(tk.Canvas):
 
         weight = "bold" if len(self._fspec) > 2 and "bold" in self._fspec[2] else "normal"
         mf = tkfont.Font(family=self._fspec[0], size=self._fspec[1], weight=weight)
-        self._th = mf.metrics("linespace")
+        th = mf.metrics("linespace")
         tw = mf.measure(text)
-        self._w = fixed_width or (tw + 2 * padx)
-        self._h = self._th + 2 * pady
+        self._btn_w = fixed_width or (tw + 2 * padx)
+        self._btn_h = th + 2 * pady
 
-        super().__init__(parent, width=self._w, height=self._h,
+        super().__init__(parent, width=self._btn_w, height=self._btn_h,
                          bg=BG, highlightthickness=0, bd=0)
         self._draw()
         self.bind("<Button-1>", self._on_click)
@@ -131,7 +131,7 @@ class RoundedButton(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w, h, r = self._w, self._h, self._radius
+        w, h, r = self._btn_w, self._btn_h, self._radius
         fill, fg = self._resolve_fill()
         outline = fg if self._style == "ghost" else fill
 
