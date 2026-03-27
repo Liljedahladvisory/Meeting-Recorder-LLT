@@ -134,6 +134,7 @@ class MeetingRecorder(tk.Tk):
         self.anthropic_client       = None
         self.total_seconds          = 0
         self.timer_id               = None
+        self.recording_start_time   = None   # set when recording begins
         self._devices               = []
 
         self.transcription_queue          = queue.Queue()
@@ -238,14 +239,14 @@ class MeetingRecorder(tk.Tk):
                  width=16, anchor="w").pack(side="left")
         for val, lbl in [("sv", "Svenska"), ("en", "English")]:
             tk.Radiobutton(lang_row, text=lbl, variable=self.language, value=val,
-                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=BG2,
+                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=ACCENT,
                            activebackground=BG2, activeforeground=FG,
                            cursor="hand2").pack(side="left", padx=(0, 20))
 
         # Whisper model row
         model_row = tk.Frame(card, bg=BG2)
         model_row.pack(fill="x", pady=6)
-        tk.Label(model_row, text="Whisper-modell", font=FONT_S, bg=BG2, fg=FG2,
+        tk.Label(model_row, text="Transkription", font=FONT_S, bg=BG2, fg=FG2,
                  width=16, anchor="w").pack(side="left")
         for val, lbl, hint in [
             ("small",    "Small",    "snabb"),
@@ -255,7 +256,7 @@ class MeetingRecorder(tk.Tk):
             grp = tk.Frame(model_row, bg=BG2)
             grp.pack(side="left", padx=(0, 6))
             tk.Radiobutton(grp, text=lbl, variable=self.whisper_size, value=val,
-                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=BG2,
+                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=ACCENT,
                            activebackground=BG2, activeforeground=FG,
                            cursor="hand2").pack(side="left")
             tk.Label(grp, text=f"({hint})", font=FONT_XS,
@@ -342,7 +343,7 @@ class MeetingRecorder(tk.Tk):
             btn = tk.Radiobutton(
                 fmt_row, text=f"{lbl}  {desc}",
                 variable=self.save_format, value=val,
-                font=FONT_S, bg=BG, fg=FG3, selectcolor=BG,
+                font=FONT_S, bg=BG, fg=FG3, selectcolor=ACCENT,
                 activebackground=BG, activeforeground=FG,
                 cursor="hand2")
             btn.pack(side="left", padx=(0, 22))
@@ -642,6 +643,7 @@ class MeetingRecorder(tk.Tk):
         self.audio_chunks = []
         self.transcript_parts = []
         self.total_seconds = 0
+        self.recording_start_time = datetime.now()
         self.pending_transcriptions = 0
         self._clear(self.transcript_box)
         self._clear(self.notes_box)
@@ -861,7 +863,7 @@ class MeetingRecorder(tk.Tk):
         transcript   = "\n".join(self.transcript_parts)
         title        = self.meeting_title.get().strip() or "Möte"
         participants = self.participants.get().strip()
-        date_str     = datetime.now().strftime("%Y-%m-%d %H:%M")
+        date_str     = (self.recording_start_time or datetime.now()).strftime("%Y-%m-%d %H:%M")
         org          = self.user_name or "organisationen"
 
         system = (
@@ -1001,39 +1003,93 @@ class MeetingRecorder(tk.Tk):
         def clean(t):
             return t.replace("**", "").replace("*", "").replace("`", "").strip()
 
-        def is_table_separator(s):
-            # Skip markdown header-separator rows like | --- | --- |
+        def is_separator_row(s):
             return all(c in "-|: " for c in s)
 
         def write(font_style, size, line_h, text, extra_ln=0):
             pdf.set_font("Helvetica", font_style, size)
-            pdf.set_x(L)  # always reset to left margin
+            pdf.set_x(L)
             pdf.multi_cell(pw, line_h, text, align="L")
             if extra_ln:
                 pdf.ln(extra_ln)
 
-        for line in md_text.splitlines():
-            s = line.strip()
-            if not s:
-                pdf.ln(4)
-            elif s == "---":
-                pdf.ln(2)
-                y = pdf.get_y()
-                pdf.line(L, y, pdf.w - R, y)
-                pdf.ln(4)
-            elif s.startswith("# "):
-                write("B", 16, 10, clean(s[2:]), extra_ln=3)
-            elif s.startswith("## "):
-                write("B", 13, 8, clean(s[3:]), extra_ln=2)
-            elif s.startswith("### "):
-                write("B", 11, 7, clean(s[4:]), extra_ln=1)
-            elif s.startswith("|"):
-                if is_table_separator(s):
-                    continue  # skip | --- | --- | rows
-                cells = [c.strip() for c in s.strip("|").split("|")]
-                write("", 9, 5, "   ".join(cells))
+        def render_table(rows):
+            """Render a list of cell-lists as a styled PDF table."""
+            if not rows:
+                return
+            n_cols = max(len(r) for r in rows)
+            if n_cols == 0:
+                return
+            col_w = pw / n_cols
+            row_h = 7
+            header = rows[0]
+            body   = rows[1:]
+
+            # Header row — dark background
+            for ci, cell in enumerate(header):
+                x = L + ci * col_w
+                pdf.set_fill_color(40, 36, 32)    # dark warm
+                pdf.set_text_color(220, 210, 195)  # warm off-white
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_xy(x, pdf.get_y())
+                pdf.cell(col_w, row_h, cell.strip(), border=0, fill=True, align="L")
+            pdf.ln(row_h)
+
+            # Body rows — alternating subtle shading
+            for ri, row in enumerate(body):
+                fill = ri % 2 == 0
+                for ci in range(n_cols):
+                    cell = row[ci].strip() if ci < len(row) else ""
+                    x = L + ci * col_w
+                    if fill:
+                        pdf.set_fill_color(28, 25, 22)
+                    else:
+                        pdf.set_fill_color(22, 20, 18)
+                    pdf.set_text_color(200, 190, 175)
+                    pdf.set_font("Helvetica", "", 9)
+                    pdf.set_xy(x, pdf.get_y())
+                    pdf.cell(col_w, row_h, cell, border=0, fill=True, align="L")
+                pdf.ln(row_h)
+
+            # Bottom border line
+            pdf.set_draw_color(80, 70, 60)
+            y = pdf.get_y()
+            pdf.line(L, y, L + pw, y)
+            pdf.set_text_color(0, 0, 0)  # reset
+            pdf.ln(3)
+
+        # Collect table rows across consecutive | lines
+        table_buf = []
+        lines = md_text.splitlines()
+        i = 0
+        while i < len(lines):
+            s = lines[i].strip()
+            if s.startswith("|"):
+                if not is_separator_row(s):
+                    table_buf.append([c.strip() for c in s.strip("|").split("|")])
             else:
-                write("", 10, 6, clean(s))
+                if table_buf:
+                    render_table(table_buf)
+                    table_buf = []
+                if not s:
+                    pdf.ln(4)
+                elif s == "---":
+                    pdf.ln(2)
+                    y = pdf.get_y()
+                    pdf.line(L, y, pdf.w - R, y)
+                    pdf.ln(4)
+                elif s.startswith("# "):
+                    write("B", 16, 10, clean(s[2:]), extra_ln=3)
+                elif s.startswith("## "):
+                    write("B", 13, 8, clean(s[3:]), extra_ln=2)
+                elif s.startswith("### "):
+                    write("B", 11, 7, clean(s[4:]), extra_ln=1)
+                else:
+                    write("", 10, 6, clean(s))
+            i += 1
+
+        if table_buf:
+            render_table(table_buf)
 
         pdf.output(path)
 
@@ -1043,7 +1099,7 @@ class MeetingRecorder(tk.Tk):
         if not self.recording: return
         h, r = divmod(self.total_seconds, 3600)
         m, s = divmod(r, 60)
-        self.timer_lbl.config(text=f"{h:02d}:{m:02d}:{s:02d}", fg=RED)
+        self.timer_lbl.config(text=f"{h:02d}:{m:02d}:{s:02d}", fg=ACCENT)
         self.total_seconds += 1
         self.timer_id = self.after(1000, self._tick)
 
