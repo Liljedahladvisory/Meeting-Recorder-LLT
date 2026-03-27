@@ -38,7 +38,7 @@ BORDER2 = "#44446A"
 FG      = "#EFEFF6"   # primary text
 FG2     = "#B0B0CC"   # secondary text — field labels, section headers
 FG3     = "#D8D8EC"   # emphasized text — transcript content
-FG_DIM  = "#707090"   # tertiary — hints, "Powered by", tab inactive
+FG_DIM  = "#9090B0"   # tertiary — hints, "Powered by", tab inactive
 ACCENT  = "#5E7BFF"
 ACCENT2 = "#3A5AE8"
 RED     = "#D95050"
@@ -276,9 +276,14 @@ class MeetingRecorder(tk.Tk):
         style.theme_use("default")
         style.configure("Dark.TCombobox",
                         fieldbackground=BG3, background=BG3,
-                        foreground=FG, selectbackground=BG4,
+                        foreground=FG, selectbackground=BG3,
                         selectforeground=FG, bordercolor=BORDER2,
-                        arrowcolor=FG2, relief="flat")
+                        arrowcolor=FG2, relief="flat", padding=6)
+        style.map("Dark.TCombobox",
+                  fieldbackground=[("readonly", BG3), ("disabled", BG2)],
+                  selectbackground=[("readonly", BG3)],
+                  foreground=[("readonly", FG), ("disabled", FG2)],
+                  selectforeground=[("readonly", FG)])
 
         self._mic_combo = ttk.Combobox(combo_row, state="readonly",
                                         font=FONT_MS, style="Dark.TCombobox")
