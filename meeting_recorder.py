@@ -299,10 +299,18 @@ class MeetingRecorder(tk.Tk):
         # Gear — Label, no border
         gear = tk.Label(right, text="⚙", font=FONT_GEAR,
                         bg=BG, fg=FG_DIM, cursor="hand2")
-        gear.pack(side="right")
-        gear.bind("<Enter>",  lambda _: gear.config(fg=FG))
-        gear.bind("<Leave>",  lambda _: gear.config(fg=FG_DIM))
+        gear.pack(side="right", padx=(10, 0))
+        gear.bind("<Enter>",    lambda _: gear.config(fg=FG))
+        gear.bind("<Leave>",    lambda _: gear.config(fg=FG_DIM))
         gear.bind("<Button-1>", lambda _: self._show_settings_dialog())
+
+        # Help button
+        help_lbl = tk.Label(right, text="?", font=("Helvetica Neue", 15, "bold"),
+                            bg=BG, fg=FG_DIM, cursor="hand2")
+        help_lbl.pack(side="right")
+        help_lbl.bind("<Enter>",    lambda _: help_lbl.config(fg=FG))
+        help_lbl.bind("<Leave>",    lambda _: help_lbl.config(fg=FG_DIM))
+        help_lbl.bind("<Button-1>", lambda _: self._show_help_dialog())
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
@@ -581,6 +589,122 @@ class MeetingRecorder(tk.Tk):
             message="Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
             is_first_run=True,
         )
+
+    def _show_help_dialog(self):
+        dlg = tk.Toplevel(self)
+        dlg.title("Hjälp & FAQ")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        self.update_idletasks()
+        w, h = 560, 620
+        x = self.winfo_x() + (self.winfo_width()  - w) // 2
+        y = self.winfo_y() + (self.winfo_height() - h) // 2
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+
+        # Scrollable content
+        outer = tk.Frame(dlg, bg=BG)
+        outer.pack(fill="both", expand=True, padx=36, pady=28)
+
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        inner = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def on_resize(e):
+            canvas.itemconfig(win_id, width=e.width)
+        canvas.bind("<Configure>", on_resize)
+        inner.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+
+        def section(title):
+            tk.Label(inner, text=title,
+                     font=("Helvetica Neue", 12, "bold"),
+                     bg=BG, fg=ACCENT, anchor="w").pack(fill="x", pady=(18, 4))
+            tk.Frame(inner, bg=BORDER, height=1).pack(fill="x")
+
+        def para(text):
+            tk.Label(inner, text=text, font=FONT_S, bg=BG, fg=FG2,
+                     wraplength=460, justify="left", anchor="w").pack(
+                         fill="x", pady=(6, 0))
+
+        def step(n, text):
+            row = tk.Frame(inner, bg=BG)
+            row.pack(fill="x", pady=(6, 0))
+            tk.Label(row, text=str(n), font=("Menlo", 10, "bold"),
+                     bg=ACCENT, fg="#FFFFFF", width=2, anchor="center",
+                     pady=1).pack(side="left")
+            tk.Label(row, text=f"  {text}", font=FONT_S, bg=BG, fg=FG2,
+                     wraplength=420, justify="left", anchor="w").pack(
+                         side="left", fill="x", expand=True)
+
+        # ── Title ──
+        tk.Label(inner, text="Hjälp & FAQ",
+                 font=("Helvetica Neue", 15, "bold"),
+                 bg=BG, fg=FG).pack(anchor="w", pady=(0, 4))
+        tk.Label(inner, text="Meeting Recorder · Powered by Liljedahl Legal Tech",
+                 font=FONT_POWERED, bg=BG, fg=FG_DIM).pack(anchor="w")
+
+        # ── Kom igång ──
+        section("Kom igång")
+        para("Appen spelar in ditt möte via mikrofon, transkriberar det med "
+             "Whisper och genererar strukturerade mötesanteckningar med Claude AI.")
+        step(1, "Ange ditt namn eller företagsnamn i inställningarna (⚙).")
+        step(2, "Fyll i din Anthropic API-nyckel (se nedan hur du skaffar en).")
+        step(3, "Ange mötets titel och deltagare.")
+        step(4, "Klicka Starta inspelning när mötet börjar.")
+        step(5, "Klicka Avsluta möte när mötet är klart.")
+        step(6, "Klicka Generera anteckningar och välj sedan Spara.")
+
+        # ── API-nyckel ──
+        section("Hur skaffar jag en API-nyckel?")
+        para("API-nyckeln är det som låter appen kommunicera med Claude AI. "
+             "Du betalar per användning direkt till Anthropic — inte till Liljedahl Legal Tech.")
+        step(1, "Gå till console.anthropic.com och skapa ett konto.")
+        step(2, "Klicka på 'API Keys' i menyn till vänster.")
+        step(3, "Klicka 'Create Key', ge den ett namn (t.ex. 'Meeting Recorder').")
+        step(4, "Kopiera nyckeln — den börjar med 'sk-ant-'.")
+        step(5, "Klistra in den i fältet API-nyckel i appen. Den sparas automatiskt.")
+        para("💡 Nyckeln sparas säkert i macOS Nyckelring och behöver bara anges en gång.")
+
+        # ── Whisper-modell ──
+        section("Vilken transkriptionsmodell ska jag välja?")
+        para("Small — snabbast, bra för korta möten och tydligt tal.\n"
+             "Medium — rekommenderas för de flesta möten (standard).\n"
+             "Large v3 — bäst kvalitet, tar längre tid, lämplig för komplexa möten.")
+
+        # ── Exportformat ──
+        section("Exportformat")
+        para(".md (Markdown) — öppnas i valfri textredigerare, t.ex. Obsidian eller Notion.\n"
+             ".docx (Word) — öppnas direkt i Microsoft Word eller Pages.\n"
+             ".pdf — lämplig för att skicka anteckningar till kunder eller kollegor.")
+
+        # ── Vanliga frågor ──
+        section("Vanliga frågor")
+        para("Varför tar transkriptionen tid?\n"
+             "Appen transkriberar i realtid medan mötet pågår. Ju längre möte och "
+             "ju större Whisper-modell, desto längre tid. Large v3 är långsammast men "
+             "ger bäst resultat.")
+        para("Sparas mina inspelningar?\n"
+             "Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
+             "transkriptet och anteckningarna sparas när du exporterar.")
+        para("Vad kostar det att använda Claude AI?\n"
+             "Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
+             "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing.")
+
+        # ── Close button ──
+        tk.Frame(inner, bg=BG, height=12).pack()
+        close = RoundedButton(inner, text="Stäng", style="solid",
+                              bg=ACCENT, fg="#FFFFFF",
+                              font_spec=("Helvetica Neue", 12),
+                              padx=24, pady=9, radius=10,
+                              command=dlg.destroy)
+        close.pack(pady=(8, 0))
 
     def _show_settings_dialog(self):
         self._open_name_dialog(
