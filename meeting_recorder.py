@@ -239,9 +239,10 @@ class MeetingRecorder(tk.Tk):
                  width=16, anchor="w").pack(side="left")
         for val, lbl in [("sv", "Svenska"), ("en", "English")]:
             tk.Radiobutton(lang_row, text=lbl, variable=self.language, value=val,
-                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=ACCENT,
-                           activebackground=BG2, activeforeground=FG,
-                           cursor="hand2").pack(side="left", padx=(0, 20))
+                           font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
+                           activebackground=BG4, activeforeground=FG,
+                           indicatoron=False, relief="flat", bd=0,
+                           padx=12, pady=4, cursor="hand2").pack(side="left", padx=(0, 6))
 
         # Whisper model row
         model_row = tk.Frame(card, bg=BG2)
@@ -255,12 +256,11 @@ class MeetingRecorder(tk.Tk):
         ]:
             grp = tk.Frame(model_row, bg=BG2)
             grp.pack(side="left", padx=(0, 6))
-            tk.Radiobutton(grp, text=lbl, variable=self.whisper_size, value=val,
-                           font=FONT_S, bg=BG2, fg=FG3, selectcolor=ACCENT,
-                           activebackground=BG2, activeforeground=FG,
-                           cursor="hand2").pack(side="left")
-            tk.Label(grp, text=f"({hint})", font=FONT_XS,
-                     bg=BG2, fg=FG2).pack(side="left", padx=(2, 0))
+            tk.Radiobutton(grp, text=f"{lbl}  ({hint})", variable=self.whisper_size, value=val,
+                           font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
+                           activebackground=BG4, activeforeground=FG,
+                           indicatoron=False, relief="flat", bd=0,
+                           padx=12, pady=4, cursor="hand2").pack(side="left")
 
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=4)
@@ -343,10 +343,11 @@ class MeetingRecorder(tk.Tk):
             btn = tk.Radiobutton(
                 fmt_row, text=f"{lbl}  {desc}",
                 variable=self.save_format, value=val,
-                font=FONT_S, bg=BG, fg=FG3, selectcolor=ACCENT,
-                activebackground=BG, activeforeground=FG,
-                cursor="hand2")
-            btn.pack(side="left", padx=(0, 22))
+                font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
+                activebackground=BG4, activeforeground=FG,
+                indicatoron=False, relief="flat", bd=0,
+                padx=12, pady=4, cursor="hand2")
+            btn.pack(side="left", padx=(0, 6))
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
@@ -1014,7 +1015,7 @@ class MeetingRecorder(tk.Tk):
                 pdf.ln(extra_ln)
 
         def render_table(rows):
-            """Render a list of cell-lists as a styled PDF table."""
+            """Render a list of cell-lists as a clean monochrome PDF table."""
             if not rows:
                 return
             n_cols = max(len(r) for r in rows)
@@ -1025,37 +1026,35 @@ class MeetingRecorder(tk.Tk):
             header = rows[0]
             body   = rows[1:]
 
-            # Header row — dark background
-            for ci, cell in enumerate(header):
-                x = L + ci * col_w
-                pdf.set_fill_color(40, 36, 32)    # dark warm
-                pdf.set_text_color(220, 210, 195)  # warm off-white
-                pdf.set_font("Helvetica", "B", 9)
-                pdf.set_xy(x, pdf.get_y())
-                pdf.cell(col_w, row_h, cell.strip(), border=0, fill=True, align="L")
-            pdf.ln(row_h)
+            pdf.set_draw_color(180, 180, 180)
 
-            # Body rows — alternating subtle shading
-            for ri, row in enumerate(body):
-                fill = ri % 2 == 0
+            # Header row — bold, underlined by top border
+            y_start = pdf.get_y()
+            pdf.line(L, y_start, L + pw, y_start)
+            for ci, cell in enumerate(header):
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_text_color(30, 30, 30)
+                pdf.set_xy(L + ci * col_w, pdf.get_y())
+                pdf.cell(col_w, row_h, cell.strip(), border=0, align="L")
+            pdf.ln(row_h)
+            y_line = pdf.get_y()
+            pdf.line(L, y_line, L + pw, y_line)
+
+            # Body rows
+            for row in body:
                 for ci in range(n_cols):
                     cell = row[ci].strip() if ci < len(row) else ""
-                    x = L + ci * col_w
-                    if fill:
-                        pdf.set_fill_color(28, 25, 22)
-                    else:
-                        pdf.set_fill_color(22, 20, 18)
-                    pdf.set_text_color(200, 190, 175)
                     pdf.set_font("Helvetica", "", 9)
-                    pdf.set_xy(x, pdf.get_y())
-                    pdf.cell(col_w, row_h, cell, border=0, fill=True, align="L")
+                    pdf.set_text_color(50, 50, 50)
+                    pdf.set_xy(L + ci * col_w, pdf.get_y())
+                    pdf.cell(col_w, row_h, cell, border=0, align="L")
                 pdf.ln(row_h)
 
-            # Bottom border line
-            pdf.set_draw_color(80, 70, 60)
+            # Bottom border
             y = pdf.get_y()
             pdf.line(L, y, L + pw, y)
-            pdf.set_text_color(0, 0, 0)  # reset
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_draw_color(0, 0, 0)
             pdf.ln(3)
 
         # Collect table rows across consecutive | lines
