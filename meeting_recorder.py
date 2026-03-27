@@ -29,20 +29,20 @@ CHANNELS      = 1
 CHUNK_SECONDS = 20
 
 # ── Colour palette ───────────────────────────────────────────────────────────
-BG      = "#0C0C0F"
-BG2     = "#131318"
-BG3     = "#1A1A21"
-BG4     = "#222230"
-BORDER  = "#2E2E3A"
-BORDER2 = "#44446A"
-FG      = "#EFEFF6"   # primary text
-FG2     = "#B0B0CC"   # secondary text — field labels, section headers
-FG3     = "#D8D8EC"   # emphasized text — transcript content
-FG_DIM  = "#9090B0"   # tertiary — hints, "Powered by", tab inactive
-ACCENT  = "#5E7BFF"
-ACCENT2 = "#3A5AE8"
+BG      = "#0E0D0C"
+BG2     = "#161412"
+BG3     = "#1E1B18"
+BG4     = "#272320"
+BORDER  = "#332E28"
+BORDER2 = "#4A4238"
+FG      = "#F2EEE8"   # primary text — warm white
+FG2     = "#C8B89A"   # secondary text — field labels, section headers
+FG3     = "#E0D4C0"   # emphasized text — transcript content
+FG_DIM  = "#9A8A72"   # tertiary — hints, "Powered by", tab inactive
+ACCENT  = "#E07820"   # orange brand accent
+ACCENT2 = "#C05E0A"   # darker orange for hover/active
 RED     = "#D95050"
-GREEN   = "#3AB870"
+GREEN   = "#4AB870"
 
 # ── Fonts ────────────────────────────────────────────────────────────────────
 FONT_LOGO1   = ("Helvetica Neue", 14, "bold")
@@ -275,15 +275,16 @@ class MeetingRecorder(tk.Tk):
         style = ttk.Style()
         style.theme_use("default")
         style.configure("Dark.TCombobox",
-                        fieldbackground=BG3, background=BG3,
+                        fieldbackground=BG3, background=BG4,
                         foreground=FG, selectbackground=BG3,
                         selectforeground=FG, bordercolor=BORDER2,
-                        arrowcolor=FG2, relief="flat", padding=6)
+                        arrowcolor=ACCENT, relief="flat", padding=8)
         style.map("Dark.TCombobox",
                   fieldbackground=[("readonly", BG3), ("disabled", BG2)],
                   selectbackground=[("readonly", BG3)],
                   foreground=[("readonly", FG), ("disabled", FG2)],
-                  selectforeground=[("readonly", FG)])
+                  selectforeground=[("readonly", FG)],
+                  arrowcolor=[("readonly", ACCENT)])
 
         self._mic_combo = ttk.Combobox(combo_row, state="readonly",
                                         font=FONT_MS, style="Dark.TCombobox")
@@ -515,16 +516,20 @@ class MeetingRecorder(tk.Tk):
             self._logo_name_lbl.config(text=self._display_name())
             dlg.destroy()
 
-        tk.Button(btn_row, text="Spara", font=FONT_B,
-                  bg=ACCENT, fg=FG, relief="flat", bd=0, cursor="hand2",
-                  padx=24, pady=8, activebackground=ACCENT2, activeforeground=FG,
-                  command=save).pack(side="right")
+        save_lbl = tk.Label(btn_row, text="Spara", font=FONT_B,
+                             bg=ACCENT, fg="#FFFFFF", padx=24, pady=8, cursor="hand2")
+        save_lbl.pack(side="right")
+        save_lbl.bind("<Button-1>", lambda _: save())
+        save_lbl.bind("<Enter>",  lambda _: save_lbl.config(bg=ACCENT2))
+        save_lbl.bind("<Leave>",  lambda _: save_lbl.config(bg=ACCENT))
 
         if not is_first_run:
-            tk.Button(btn_row, text="Avbryt", font=FONT_B,
-                      bg=BG3, fg=FG2, relief="flat", bd=0, cursor="hand2",
-                      padx=24, pady=8, activebackground=BG4, activeforeground=FG,
-                      command=dlg.destroy).pack(side="right", padx=(0, 8))
+            cancel_lbl = tk.Label(btn_row, text="Avbryt", font=FONT_B,
+                                   bg=BG3, fg=FG2, padx=24, pady=8, cursor="hand2")
+            cancel_lbl.pack(side="right", padx=(0, 8))
+            cancel_lbl.bind("<Button-1>", lambda _: dlg.destroy())
+            cancel_lbl.bind("<Enter>", lambda _: cancel_lbl.config(bg=BG4, fg=FG))
+            cancel_lbl.bind("<Leave>", lambda _: cancel_lbl.config(bg=BG3, fg=FG2))
 
         entry.bind("<Return>", lambda _: save())
         dlg.protocol("WM_DELETE_WINDOW", save if is_first_run else dlg.destroy)
