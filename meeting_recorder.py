@@ -77,6 +77,116 @@ def save_config(cfg: dict):
         pass
 
 
+class RoundedButton(tk.Canvas):
+    """Canvas-based button with smooth rounded corners and full colour control."""
+
+    def __init__(self, parent, text, command=None, style="solid",
+                 bg=None, fg="#FFFFFF", radius=12,
+                 font_spec=None, padx=28, pady=12,
+                 state="normal", fixed_width=None):
+        import tkinter.font as tkfont
+
+        self._style    = style          # "solid" or "ghost"
+        self._bg       = bg or ACCENT
+        self._fg       = fg
+        self._radius   = radius
+        self._padx     = padx
+        self._pady     = pady
+        self._command  = command
+        self._enabled  = (state == "normal")
+        self._text     = text
+        self._hovering = False
+        self._fspec    = font_spec or ("Helvetica Neue", 13)
+
+        weight = "bold" if len(self._fspec) > 2 and "bold" in self._fspec[2] else "normal"
+        mf = tkfont.Font(family=self._fspec[0], size=self._fspec[1], weight=weight)
+        self._th = mf.metrics("linespace")
+        tw = mf.measure(text)
+        self._w = fixed_width or (tw + 2 * padx)
+        self._h = self._th + 2 * pady
+
+        super().__init__(parent, width=self._w, height=self._h,
+                         bg=BG, highlightthickness=0, bd=0)
+        self._draw()
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>",    self._on_enter)
+        self.bind("<Leave>",    self._on_leave)
+
+    # ── drawing ───────────────────────────────────────────────────────────────
+
+    def _resolve_fill(self):
+        if not self._enabled:
+            return (BG3, FG_DIM) if self._style == "solid" else (BG, BORDER)
+        if self._hovering:
+            if self._style == "solid":
+                c = self._bg.lstrip("#")
+                r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+                darker = f"#{int(r*.82):02x}{int(g*.82):02x}{int(b*.82):02x}"
+                return darker, self._fg
+            else:
+                return BG2, self._fg
+        if self._style == "solid":
+            return self._bg, self._fg
+        return BG, self._fg
+
+    def _draw(self):
+        self.delete("all")
+        w, h, r = self._w, self._h, self._radius
+        fill, fg = self._resolve_fill()
+        outline = fg if self._style == "ghost" else fill
+
+        # Smooth rounded-rectangle polygon
+        pts = [r, 0,  w-r, 0,  w, 0,  w, r,
+               w, h-r,  w, h,  w-r, h,  r, h,
+               0, h,  0, h-r,  0, r,  0, 0]
+        self.create_polygon(pts, smooth=True,
+                            fill=fill, outline=outline, width=1)
+        self.create_text(w // 2, h // 2, text=self._text,
+                         font=self._fspec, fill=fg, anchor="center")
+
+    # ── public interface ──────────────────────────────────────────────────────
+
+    def config(self, **kw):
+        import tkinter.font as tkfont
+        changed = False
+        if "text" in kw:
+            self._text = kw.pop("text")
+            changed = True
+        if "state" in kw:
+            self._enabled = (kw.pop("state") == "normal")
+            changed = True
+        if "bg" in kw:
+            self._bg = kw.pop("bg")
+            changed = True
+        if "fg" in kw:
+            self._fg = kw.pop("fg")
+            changed = True
+        if "cursor" in kw:
+            super().config(cursor=kw.pop("cursor"))
+        if kw:
+            super().config(**kw)
+        if changed:
+            self._draw()
+
+    def cget(self, key):
+        if key == "state":  return "normal" if self._enabled else "disabled"
+        if key == "text":   return self._text
+        if key == "bg":     return self._bg
+        return super().cget(key)
+
+    # ── event handlers ────────────────────────────────────────────────────────
+
+    def _on_click(self, _=None):
+        if self._enabled and self._command:
+            self._command()
+
+    def _on_enter(self, _=None):
+        self._hovering = True;  self._draw()
+
+    def _on_leave(self, _=None):
+        self._hovering = False; self._draw()
+
+
 def list_audio_devices():
     try:
         import sounddevice as sd
@@ -304,45 +414,31 @@ class MeetingRecorder(tk.Tk):
         btn_row = tk.Frame(outer, bg=BG)
         btn_row.pack(fill="x")
 
-        # ── Recording button (Label so macOS honours bg colour) ──────────────
-        self._rec_btn_enabled = True
-        self.rec_btn = tk.Label(
-            btn_row,
-            text="⬤  Starta inspelning",
-            font=("Helvetica Neue", 12, "bold"),
-            bg=ACCENT, fg="#FFFFFF",
-            padx=28, pady=13,
-            cursor="hand2",
-            relief="flat",
+        self.rec_btn = RoundedButton(
+            btn_row, text="⬤  Starta inspelning",
+            style="solid", bg=ACCENT, fg="#FFFFFF",
+            font_spec=("Helvetica Neue", 13, "bold"),
+            padx=28, pady=13, radius=12,
+            command=self._toggle_recording,
         )
-        self.rec_btn.bind("<Button-1>", self._on_rec_btn_click)
         self.rec_btn.pack(side="left", padx=(0, 10))
 
-        # ── Secondary buttons — outlined ghost style ──────────────────────────
-        ghost_kw = dict(
-            font=("Helvetica Neue", 12),
-            relief="solid", bd=1,
-            padx=24, pady=12,
-            cursor="hand2",
-        )
-
-        self.notes_btn = tk.Button(
+        self.notes_btn = RoundedButton(
             btn_row, text="◆  Generera anteckningar",
-            bg=BG, fg=FG_DIM,
-            activebackground=BG2, activeforeground=FG,
-            highlightbackground=BORDER2, highlightthickness=1,
+            style="ghost", fg=FG_DIM,
+            font_spec=("Helvetica Neue", 13),
+            padx=24, pady=13, radius=12,
             state="disabled", command=self._generate_notes,
-            **ghost_kw,
+            fixed_width=240,
         )
         self.notes_btn.pack(side="left", padx=(0, 10))
 
-        self.save_btn = tk.Button(
+        self.save_btn = RoundedButton(
             btn_row, text="↓  Spara",
-            bg=BG, fg=FG_DIM,
-            activebackground=BG2, activeforeground=FG,
-            highlightbackground=BORDER2, highlightthickness=1,
+            style="ghost", fg=FG_DIM,
+            font_spec=("Helvetica Neue", 13),
+            padx=24, pady=13, radius=12,
             state="disabled", command=self._save_output,
-            **ghost_kw,
         )
         self.save_btn.pack(side="left")
 
@@ -621,13 +717,8 @@ class MeetingRecorder(tk.Tk):
 
     # ── Recording flow ────────────────────────────────────────────────────────
 
-    def _on_rec_btn_click(self, _=None):
-        if self._rec_btn_enabled:
-            self._toggle_recording()
-
     def _set_rec_btn_enabled(self, enabled: bool):
-        self._rec_btn_enabled = enabled
-        self.rec_btn.config(cursor="hand2" if enabled else "")
+        self.rec_btn.config(state="normal" if enabled else "disabled")
 
     def _toggle_recording(self):
         if not self.recording:
