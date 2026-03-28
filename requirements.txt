@@ -6,3 +6,4 @@ anthropic
 keyring
 python-docx
 fpdf2
+pyobjc-framework-Cocoa

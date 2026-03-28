@@ -3,6 +3,46 @@
 Meeting Recorder & Notes Generator — Powered by Liljedahl Legal Tech
 """
 
+# ── macOS: set app name + dock icon BEFORE tkinter starts ────────────────────
+import sys, os, ctypes, ctypes.util
+if sys.platform == "darwin":
+    try:
+        from Foundation import NSBundle, NSProcessInfo
+        from AppKit import NSApplication, NSImage
+
+        _APP_NAME = "Meeting Recorder LLT"
+
+        # 1) Set process name at C level (affects menu bar)
+        _libc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("c"))
+        _libc.setprogname(_APP_NAME.encode("utf-8"))
+
+        # 2) Set Cocoa process name
+        NSProcessInfo.processInfo().setProcessName_(_APP_NAME)
+
+        # 3) Set bundle metadata
+        _bundle = NSBundle.mainBundle()
+        _info = _bundle.localizedInfoDictionary() or _bundle.infoDictionary()
+        if _info:
+            _info["CFBundleName"] = _APP_NAME
+            _info["CFBundleDisplayName"] = _APP_NAME
+
+        # 4) Dock icon — look for .icns next to script or inside .app/Resources
+        _app = NSApplication.sharedApplication()
+        _script_dir = os.path.dirname(os.path.abspath(__file__))
+        for _candidate in [
+            os.path.join(_script_dir, "MeetingRecorder.icns"),
+            os.path.join(_script_dir, "..", "Resources", "MeetingRecorder.icns"),
+            os.path.join(_script_dir, "..", "..", "Resources", "MeetingRecorder.icns"),
+        ]:
+            if os.path.isfile(_candidate):
+                _icon = NSImage.alloc().initWithContentsOfFile_(_candidate)
+                if _icon:
+                    _app.setApplicationIconImage_(_icon)
+                break
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
 import threading
@@ -12,7 +52,10 @@ import time
 import wave
 import tempfile
 import json
-from datetime import datetime
+import base64
+import hashlib
+import subprocess
+from datetime import datetime, date
 import numpy as np
 try:
     import keyring
@@ -22,11 +65,138 @@ except ImportError:
 
 _KEYRING_SERVICE  = "MeetingRecorder-LLT"
 _KEYRING_USERNAME = "anthropic_api_key"
-CONFIG_PATH       = os.path.expanduser("~/.meeting_recorder_llt.json")
+# ── Platform-specific paths ───────────────────────────────────────────────────
+if sys.platform == "win32":
+    _APP_DATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MeetingRecorderLLT")
+else:
+    _APP_DATA = os.path.expanduser("~/.meeting-recorder-llt")
+
+CONFIG_PATH  = os.path.join(_APP_DATA, "config.json")
+LICENSE_PATH = os.path.join(_APP_DATA, "license.json")
 
 SAMPLE_RATE   = 16000
 CHANNELS      = 1
 CHUNK_SECONDS = 20
+
+# ── License verification (HMAC-SHA256 — stdlib only) ─────────────────────────
+import hmac as _hmac
+_LICENSE_HMAC_SECRET = bytes.fromhex(
+    "REDACTED_PART1"
+    "REDACTED_PART2"
+)
+
+def _get_machine_id() -> str:
+    """Return a stable hash of the machine's hardware UUID (cross-platform)."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                text=True, timeout=5,
+            )
+            for line in out.splitlines():
+                if "IOPlatformUUID" in line:
+                    uuid = line.split('"')[-2]
+                    return hashlib.sha256(uuid.encode()).hexdigest()[:32]
+        elif sys.platform == "win32":
+            out = subprocess.check_output(
+                ["wmic", "csproduct", "get", "uuid"],
+                text=True, timeout=5,
+            )
+            for line in out.splitlines():
+                line = line.strip()
+                if line and line != "UUID" and line != "":
+                    return hashlib.sha256(line.encode()).hexdigest()[:32]
+    except Exception:
+        pass
+    return hashlib.sha256(b"unknown-machine").hexdigest()[:32]
+
+def _verify_license(key_str: str) -> dict | None:
+    """Verify a license key (HMAC-SHA256). Returns payload dict or None."""
+    try:
+        # Strip whitespace, newlines, prefix, and chunk separators
+        raw = key_str.strip().replace("\n", "").replace("\r", "").replace(" ", "")
+        if raw.upper().startswith("LLT."):
+            raw = raw[4:]
+        raw = raw.replace(".", "")
+
+        # Decode base64 (add padding if needed)
+        pad = 4 - len(raw) % 4
+        if pad != 4:
+            raw += "=" * pad
+        combined = base64.urlsafe_b64decode(raw)
+
+        # HMAC-SHA256 digest is 32 bytes — split from the end
+        # Format: payload_bytes + b"|" + hmac_digest(32 bytes)
+        if len(combined) < 34:  # at least 1 byte payload + | + 32 sig
+            return None
+        sig = combined[-32:]
+        if combined[-33:-32] != b"|":
+            return None
+        payload_bytes = combined[:-33]
+
+        # Verify HMAC
+        expected = _hmac.new(_LICENSE_HMAC_SECRET, payload_bytes,
+                             hashlib.sha256).digest()
+        if not _hmac.compare_digest(sig, expected):
+            return None
+
+        payload = json.loads(payload_bytes.decode("utf-8"))
+        return payload
+    except Exception:
+        return None
+
+def _check_license_file() -> tuple[bool, str, dict | None]:
+    """Check stored license. Returns (valid, message, payload)."""
+    if not os.path.isfile(LICENSE_PATH):
+        return False, "Ingen licens hittad.", None
+    try:
+        data = json.loads(open(LICENSE_PATH, encoding="utf-8").read())
+        key_str = data.get("key", "")
+        stored_machine = data.get("machine_id", "")
+    except Exception:
+        return False, "Kunde inte l\u00e4sa licensfil.", None
+
+    # Verify signature
+    payload = _verify_license(key_str)
+    if payload is None:
+        return False, "Ogiltig licensnyckel.", None
+
+    # Check machine binding
+    current_machine = _get_machine_id()
+    if stored_machine and stored_machine != current_machine:
+        return False, "Licensen \u00e4r registrerad p\u00e5 en annan dator.", None
+
+    # Check expiry
+    expires = payload.get("expires", "2000-01-01")
+    if date.fromisoformat(expires) < date.today():
+        return False, f"Licensen gick ut {expires}. Kontakta Liljedahl Legal Tech f\u00f6r f\u00f6rnyelse.", None
+
+    return True, "ok", payload
+
+def _activate_license(key_str: str) -> tuple[bool, str]:
+    """Activate a license key on this machine."""
+    payload = _verify_license(key_str)
+    if payload is None:
+        return False, "Ogiltig licensnyckel. Kontrollera att du kopierat hela nyckeln."
+
+    expires = payload.get("expires", "2000-01-01")
+    if date.fromisoformat(expires) < date.today():
+        return False, f"Licensnyckeln har redan g\u00e5tt ut ({expires})."
+
+    # Save with machine binding
+    os.makedirs(os.path.dirname(LICENSE_PATH), exist_ok=True)
+    license_data = {
+        "key": key_str.strip(),
+        "machine_id": _get_machine_id(),
+        "activated": date.today().isoformat(),
+        "company": payload.get("company", ""),
+        "email": payload.get("email", ""),
+        "expires": expires,
+    }
+    with open(LICENSE_PATH, "w", encoding="utf-8") as f:
+        json.dump(license_data, f, indent=2, ensure_ascii=False)
+
+    return True, f"Licensen \u00e4r aktiverad! G\u00e4ller till {expires}."
 
 # ── Colour palette ───────────────────────────────────────────────────────────
 BG      = "#0E0D0C"
@@ -257,6 +427,7 @@ class MeetingRecorder(tk.Tk):
         self._transcription_worker_thread = None
 
         self._build_ui()
+        self._build_menus()
         self._load_saved_key()
         self._poll_log()
         self.after(200, self._refresh_devices)
@@ -264,6 +435,100 @@ class MeetingRecorder(tk.Tk):
 
         if not self.user_name:
             self.after(300, self._show_setup_dialog)
+
+    # ── macOS menu bar ────────────────────────────────────────────────────────
+
+    def _build_menus(self):
+        menubar = tk.Menu(self)
+        self.config(menu=menubar)
+
+        if sys.platform == "darwin":
+            # ── macOS: Apple menu (system-managed) + Help menu ──
+            app_menu = tk.Menu(menubar, name="apple", tearoff=0)
+            menubar.add_cascade(menu=app_menu)
+
+            help_menu = tk.Menu(menubar, name="help", tearoff=0)
+            menubar.add_cascade(label="Hjälp", menu=help_menu)
+            help_menu.add_command(label="Hjälp & FAQ…", command=self._show_help_dialog)
+            help_menu.add_separator()
+            help_menu.add_command(label="Om Meeting Recorder LLT…", command=self._show_about_dialog)
+
+            # macOS native hooks
+            self.createcommand("tkAboutDialog", self._show_about_dialog)
+            self.createcommand("tk::mac::ShowHelp", self._show_help_dialog)
+
+        else:
+            # ── Windows: standard menu bar ──
+            app_menu = tk.Menu(menubar, tearoff=0)
+            menubar.add_cascade(label="Arkiv", menu=app_menu)
+            app_menu.add_command(label="Om Meeting Recorder LLT…", command=self._show_about_dialog)
+            app_menu.add_separator()
+            app_menu.add_command(label="Avsluta", command=self.quit)
+
+            help_menu = tk.Menu(menubar, tearoff=0)
+            menubar.add_cascade(label="Hjälp", menu=help_menu)
+            help_menu.add_command(label="Hjälp & FAQ…", command=self._show_help_dialog)
+
+    def _show_about_dialog(self):
+        dlg = tk.Toplevel(self)
+        dlg.title("Om Meeting Recorder LLT")
+        dlg.configure(bg=BG2)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        self.update_idletasks()
+        w, h = 400, 340
+        x = self.winfo_x() + (self.winfo_width()  - w) // 2
+        y = self.winfo_y() + (self.winfo_height() - h) // 2
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+
+        inner = tk.Frame(dlg, bg=BG2, padx=40, pady=30)
+        inner.pack(fill="both", expand=True)
+
+        # Icon placeholder — app name large
+        tk.Label(
+            inner, text="Meeting Recorder LLT",
+            font=("Helvetica Neue", 18, "bold"), bg=BG2, fg=FG,
+        ).pack(pady=(10, 2))
+
+        tk.Label(
+            inner, text="Version 1.0.0",
+            font=FONT_S, bg=BG2, fg=FG2,
+        ).pack(pady=(0, 16))
+
+        # Separator
+        tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=8)
+
+        tk.Label(
+            inner, text="Powered by Liljedahl Legal Tech",
+            font=("Helvetica Neue", 11, "italic"), bg=BG2, fg=ACCENT,
+        ).pack(pady=(8, 4))
+
+        tk.Label(
+            inner, text="Utvecklad av Liljedahl Advisory AB",
+            font=FONT_S, bg=BG2, fg=FG2,
+        ).pack(pady=(0, 4))
+
+        tk.Label(
+            inner, text="www.liljedahladvisory.com",
+            font=FONT_S, bg=BG2, fg=FG_DIM,
+        ).pack(pady=(0, 4))
+
+        tk.Label(
+            inner,
+            text="\u00a9 2025\u20132026 Liljedahl Advisory AB.\nAlla r\u00e4ttigheter f\u00f6rbeh\u00e5llna.",
+            font=("Helvetica Neue", 9), bg=BG2, fg=FG_DIM,
+            justify="center",
+        ).pack(pady=(8, 16))
+
+        # Close button
+        btn_bar = tk.Frame(dlg, bg=BG2, pady=10)
+        btn_bar.pack(fill="x", side="bottom")
+        close = RoundedButton(
+            btn_bar, text="St\u00e4ng", style="primary",
+            padx=28, pady=8, command=dlg.destroy,
+        )
+        close.pack()
 
     # ── UI construction ──────────────────────────────────────────────────────
 
@@ -1534,6 +1799,375 @@ class MeetingRecorder(tk.Tk):
         return f"{h:02d}:{m:02d}:{s:02d}"
 
 
-if __name__ == "__main__":
+# ── Webhook URL for admin notifications ──────────────────────────────────────
+# Replace with your Google Apps Script web app URL after setup
+_ADMIN_WEBHOOK_URL = ""  # e.g. "https://script.google.com/macros/s/.../exec"
+_ADMIN_EMAIL = "svante@liljedahladvisory.se"
+
+# ── Revocation list URL (hosted on GitHub) ───────────────────────────────────
+_REVOCATION_URL = "https://raw.githubusercontent.com/Liljedahladvisory/Meeting-Recorder-LLT/main/revoked.json"
+
+def _check_revocation(email: str) -> bool:
+    """Check if the given email is revoked. Returns True if REVOKED."""
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(_REVOCATION_URL,
+                                     headers={"User-Agent": "MeetingRecorderLLT/1.0"})
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read().decode("utf-8"))
+        revoked_emails = [e.lower().strip() for e in data.get("revoked", [])]
+        return email.lower().strip() in revoked_emails
+    except Exception:
+        # If we can't reach the server, allow access (graceful offline)
+        return False
+
+def _generate_trial_key(name: str, email: str, company: str = "",
+                        days: int = 3) -> str:
+    """Generate a short-lived trial license key (HMAC-signed)."""
+    created = date.today().isoformat()
+    expires = (date.today() + __import__("datetime").timedelta(days=days)).isoformat()
+    payload = {
+        "company": company or name,
+        "created": created,
+        "email": email,
+        "expires": expires,
+        "trial": True,
+    }
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    payload_bytes = payload_json.encode("utf-8")
+    sig = _hmac.new(_LICENSE_HMAC_SECRET, payload_bytes, hashlib.sha256).digest()
+    combined = payload_bytes + b"|" + sig
+    key_b64 = base64.urlsafe_b64encode(combined).decode("ascii")
+    chunks = [key_b64[i:i+4] for i in range(0, len(key_b64), 4)]
+    return "LLT." + ".".join(chunks)
+
+
+def _notify_admin(reg_data: dict):
+    """Send registration data to admin via webhook (fire-and-forget)."""
+    import urllib.request
+    import urllib.error
+
+    # Method 1: Webhook (if configured)
+    if _ADMIN_WEBHOOK_URL:
+        try:
+            req = urllib.request.Request(
+                _ADMIN_WEBHOOK_URL,
+                data=json.dumps(reg_data).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=10)
+            return
+        except Exception:
+            pass
+
+    # Method 2: Fallback — save registration to local file for admin review
+    reg_log = os.path.join(_APP_DATA, "registrations.json")
+    os.makedirs(os.path.dirname(reg_log), exist_ok=True)
+    existing = []
+    if os.path.isfile(reg_log):
+        try:
+            existing = json.loads(open(reg_log, encoding="utf-8").read())
+        except Exception:
+            pass
+    existing.append(reg_data)
+    with open(reg_log, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
+
+
+def _show_registration_window() -> bool:
+    """Show registration form for new users. Returns True if registered."""
+    root = tk.Tk()
+    root.title("Meeting Recorder LLT — Registrering")
+    root.configure(bg=BG2)
+    root.resizable(False, False)
+
+    w, h = 540, 580
+    sx = root.winfo_screenwidth()
+    sy = root.winfo_screenheight()
+    root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+
+    registered = [False]
+
+    inner = tk.Frame(root, bg=BG2, padx=40, pady=24)
+    inner.pack(fill="both", expand=True)
+
+    # Header
+    tk.Label(inner, text="Meeting Recorder LLT",
+             font=("Helvetica Neue", 20, "bold"), bg=BG2, fg=FG
+             ).pack(pady=(8, 2))
+    tk.Label(inner, text="Powered by Liljedahl Legal Tech",
+             font=("Helvetica Neue", 10, "italic"), bg=BG2, fg=ACCENT
+             ).pack(pady=(0, 16))
+    tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=4)
+
+    tk.Label(inner, text="Registrera dig för att aktivera din licens:",
+             font=FONT_S, bg=BG2, fg=FG2
+             ).pack(anchor="w", pady=(12, 10))
+
+    # Form fields
+    fields = {}
+    form = tk.Frame(inner, bg=BG2)
+    form.pack(fill="x")
+
+    field_defs = [
+        ("name",    "Namn *",                      True),
+        ("company", "Företagsnamn",                 False),
+        ("address", "Adress *",                     True),
+        ("org_nr",  "Organisationsnummer",          False),
+        ("email",   "E-postadress *",               True),
+    ]
+
+    for key, label, required in field_defs:
+        tk.Label(form, text=label, font=FONT_S, bg=BG2, fg=FG2
+                 ).pack(anchor="w", pady=(6, 2))
+        entry = tk.Entry(form, font=FONT_S, bg=BG, fg=FG,
+                         insertbackground=FG, relief="solid", bd=1,
+                         highlightbackground=BORDER, highlightcolor=ACCENT)
+        entry.pack(fill="x", pady=(0, 2))
+        fields[key] = entry
+
+    msg_label = tk.Label(inner, text="", font=FONT_S, bg=BG2, fg=FG2,
+                         wraplength=440, justify="left")
+    msg_label.pack(fill="x", pady=(10, 8))
+
+    def do_register():
+        name = fields["name"].get().strip()
+        company = fields["company"].get().strip()
+        address = fields["address"].get().strip()
+        org_nr = fields["org_nr"].get().strip()
+        email = fields["email"].get().strip()
+
+        # Validate required fields
+        if not name:
+            msg_label.config(text="Fyll i ditt namn.", fg=RED)
+            return
+        if not address:
+            msg_label.config(text="Fyll i din adress.", fg=RED)
+            return
+        if not email or "@" not in email:
+            msg_label.config(text="Ange en giltig e-postadress.", fg=RED)
+            return
+
+        msg_label.config(text="Registrerar...", fg=FG_DIM)
+        root.update()
+
+        # Generate 12-month license key
+        license_key = _generate_trial_key(name, email, company, days=365)
+
+        # Activate the license
+        ok, activate_msg = _activate_license(license_key)
+        if not ok:
+            msg_label.config(text="Kunde inte skapa licens: " + activate_msg, fg=RED)
+            return
+
+        # Save registration data locally
+        reg_data = {
+            "name": name,
+            "company": company,
+            "address": address,
+            "org_nr": org_nr,
+            "email": email,
+            "registered": date.today().isoformat(),
+            "license_expires": (date.today() + __import__("datetime").timedelta(days=365)).isoformat(),
+            "machine_id": _get_machine_id(),
+        }
+
+        # Notify admin (in background thread)
+        import threading
+        threading.Thread(target=_notify_admin, args=(reg_data,), daemon=True).start()
+
+        msg_label.config(
+            text=f"✅ Välkommen, {name}! Din licens är aktiverad.",
+            fg=GREEN,
+        )
+        registered[0] = True
+        root.after(2500, root.destroy)
+
+    btn_frame = tk.Frame(inner, bg=BG2)
+    btn_frame.pack(fill="x", pady=(4, 0))
+
+    RoundedButton(
+        btn_frame, text="Registrera & starta", style="primary",
+        padx=24, pady=10, command=do_register,
+    ).pack(side="left")
+
+    RoundedButton(
+        btn_frame, text="Jag har redan en nyckel", style="ghost",
+        padx=20, pady=10,
+        command=lambda: [setattr(root, '_go_activate', True), root.destroy()],
+    ).pack(side="right")
+
+    root._go_activate = False
+    root.mainloop()
+
+    if getattr(root, '_go_activate', False):
+        return _show_activation_window()
+    return registered[0]
+
+
+def _show_activation_window() -> bool:
+    """Show a license activation window. Returns True if activated."""
+    root = tk.Tk()
+    root.title("Meeting Recorder LLT — Aktivering")
+    root.configure(bg=BG2)
+    root.resizable(False, False)
+
+    w, h = 520, 420
+    sx = root.winfo_screenwidth()
+    sy = root.winfo_screenheight()
+    root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+
+    activated = [False]
+
+    inner = tk.Frame(root, bg=BG2, padx=40, pady=30)
+    inner.pack(fill="both", expand=True)
+
+    tk.Label(inner, text="Meeting Recorder LLT",
+             font=("Helvetica Neue", 20, "bold"), bg=BG2, fg=FG
+             ).pack(pady=(10, 2))
+    tk.Label(inner, text="Powered by Liljedahl Legal Tech",
+             font=("Helvetica Neue", 10, "italic"), bg=BG2, fg=ACCENT
+             ).pack(pady=(0, 20))
+
+    tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=8)
+
+    tk.Label(inner, text="Ange din licensnyckel för att aktivera appen:",
+             font=FONT_S, bg=BG2, fg=FG2
+             ).pack(anchor="w", pady=(16, 6))
+
+    key_entry = tk.Text(inner, height=4, width=50,
+                        font=("Menlo", 10), bg=BG, fg=FG,
+                        insertbackground=FG, relief="solid", bd=1,
+                        highlightbackground=BORDER, highlightcolor=ACCENT,
+                        wrap="char")
+    key_entry.pack(fill="x", pady=(0, 8))
+
+    msg_label = tk.Label(inner, text="", font=FONT_S, bg=BG2, fg=FG2,
+                         wraplength=420, justify="left")
+    msg_label.pack(fill="x", pady=(4, 12))
+
+    def do_activate():
+        key_text = key_entry.get("1.0", "end").strip()
+        if not key_text:
+            msg_label.config(text="Klistra in din licensnyckel ovan.", fg=ACCENT)
+            return
+        ok, msg = _activate_license(key_text)
+        if ok:
+            msg_label.config(text="✅ " + msg, fg=GREEN)
+            activated[0] = True
+            root.after(1500, root.destroy)
+        else:
+            msg_label.config(text="❌ " + msg, fg=RED)
+
+    btn_frame = tk.Frame(inner, bg=BG2)
+    btn_frame.pack(fill="x")
+
+    RoundedButton(
+        btn_frame, text="Aktivera", style="primary",
+        padx=28, pady=10, command=do_activate,
+    ).pack(side="left")
+
+    RoundedButton(
+        btn_frame, text="Avsluta", style="ghost",
+        padx=28, pady=10, command=root.destroy,
+    ).pack(side="right")
+
+    root.mainloop()
+    return activated[0]
+
+
+def _show_expired_window(message: str) -> bool:
+    """Show license expired window with option to re-enter key."""
+    root = tk.Tk()
+    root.title("Meeting Recorder LLT — Licens")
+    root.configure(bg=BG2)
+    root.resizable(False, False)
+
+    w, h = 480, 280
+    sx = root.winfo_screenwidth()
+    sy = root.winfo_screenheight()
+    root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+
+    reactivate = [False]
+
+    inner = tk.Frame(root, bg=BG2, padx=40, pady=30)
+    inner.pack(fill="both", expand=True)
+
+    tk.Label(inner, text="Meeting Recorder LLT",
+             font=("Helvetica Neue", 16, "bold"), bg=BG2, fg=FG
+             ).pack(pady=(10, 16))
+
+    tk.Label(inner, text=message,
+             font=FONT_S, bg=BG2, fg=RED, wraplength=380, justify="center"
+             ).pack(pady=(0, 8))
+
+    tk.Label(inner, text="Kontakta Liljedahl Legal Tech för att förnya din licens:\nsvante@liljedahladvisory.se",
+             font=("Helvetica Neue", 10), bg=BG2, fg=FG_DIM, justify="center"
+             ).pack(pady=(8, 20))
+
+    btn_frame = tk.Frame(inner, bg=BG2)
+    btn_frame.pack(fill="x")
+
+    def do_reactivate():
+        reactivate[0] = True
+        root.destroy()
+
+    RoundedButton(
+        btn_frame, text="Ange ny licensnyckel", style="primary",
+        padx=24, pady=10, command=do_reactivate,
+    ).pack(side="left")
+
+    RoundedButton(
+        btn_frame, text="Avsluta", style="ghost",
+        padx=24, pady=10, command=root.destroy,
+    ).pack(side="right")
+
+    root.mainloop()
+    return reactivate[0]
+
+
+def _main():
+    import multiprocessing
+    multiprocessing.freeze_support()
+    multiprocessing.set_start_method("spawn", force=True)
+
+    # ── License check ────────────────────────────────────────────────────
+    valid, msg, payload = _check_license_file()
+
+    if not valid and os.path.isfile(LICENSE_PATH):
+        # License exists but expired/invalid
+        if _show_expired_window(msg):
+            if not _show_activation_window():
+                return
+            valid, msg, payload = _check_license_file()
+            if not valid:
+                return
+        else:
+            return
+
+    if not valid and not os.path.isfile(LICENSE_PATH):
+        # No license at all — show registration form (new user)
+        if not _show_registration_window():
+            return
+        valid, msg, payload = _check_license_file()
+        if not valid:
+            return
+
+    # ── Revocation check (non-blocking — allows offline use) ──────────
+    if valid and payload:
+        user_email = payload.get("email", "")
+        if user_email and _check_revocation(user_email):
+            _show_expired_window(
+                "Din licens har spärrats. Kontakta Liljedahl Legal Tech."
+            )
+            return
+    # ─────────────────────────────────────────────────────────────────────
+
     app = MeetingRecorder()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    _main()
