@@ -694,6 +694,11 @@ class MeetingRecorder(tk.Tk):
 
         # ── Vanliga frågor ──
         section("Vanliga frågor")
+        para("Varför kan jag inte generera anteckningar direkt?\n"
+             "När du avslutar mötet fortsätter appen att transkribera eventuellt "
+             "kvarvarande ljud i bakgrunden. Knappen 'Generera anteckningar' aktiveras "
+             "automatiskt så snart transkriptionen är klar — du behöver inte göra något, "
+             "bara vänta en stund. Hur länge beror på mötets längd och vald modell.")
         para("Varför tar transkriptionen tid?\n"
              "Appen transkriberar i realtid medan mötet pågår. Ju längre möte och "
              "ju större Whisper-modell, desto längre tid. Large v3 är långsammast men "
