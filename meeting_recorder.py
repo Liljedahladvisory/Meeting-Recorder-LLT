@@ -718,6 +718,15 @@ class MeetingRecorder(tk.Tk):
                           foreground=FG_DIM,
                           spacing1=6, spacing3=0,
                           lmargin1=0, lmargin2=0)
+        txt.tag_configure("faq_q",
+                          font=("Helvetica Neue", 12, "bold"),
+                          foreground=ACCENT,
+                          spacing1=10, spacing3=2)
+        txt.tag_configure("faq_a",
+                          font=("Helvetica Neue", 12),
+                          foreground=FG2,
+                          spacing1=0, spacing3=0,
+                          lmargin1=0, lmargin2=0)
         txt.tag_configure("spacer",
                           font=("Helvetica Neue", 6),
                           spacing1=0, spacing3=0)
@@ -741,6 +750,10 @@ class MeetingRecorder(tk.Tk):
 
         def tip(text):
             ins("tip", text + "\n")
+
+        def faq(question, answer):
+            ins("faq_q", question + "\n")
+            ins("faq_a", answer + "\n")
 
         def spacer():
             ins("spacer", "\n")
@@ -780,25 +793,25 @@ class MeetingRecorder(tk.Tk):
         step(".pdf",  "PDF — lämplig för att skicka anteckningar till kunder eller kollegor.")
 
         section("Vanliga frågor")
-        para("Varför kan jag inte generera anteckningar direkt efter mötet?\n"
-             "När du avslutar mötet fortsätter appen transkribera kvarvarande ljud i "
-             "bakgrunden. En statusrad visar hur långt transkriptionen kommit. Knappen "
-             "'Generera anteckningar' aktiveras automatiskt när allt är klart — "
-             "vänta bara tills statusraden försvinner. Hur lång tid det tar beror på "
-             "mötets längd och vald Whisper-modell.")
+        faq("Varför kan jag inte generera anteckningar direkt efter mötet?",
+            "När du avslutar mötet fortsätter appen transkribera kvarvarande ljud i "
+            "bakgrunden. En statusrad visar hur långt transkriptionen kommit. Knappen "
+            "'Generera anteckningar' aktiveras automatiskt när allt är klart — "
+            "vänta bara tills statusraden försvinner. Hur lång tid det tar beror på "
+            "mötets längd och vald Whisper-modell.")
         spacer()
-        para("Varför tar transkriptionen tid?\n"
-             "Appen transkriberar i realtid medan mötet pågår och avslutar bearbetningen "
-             "direkt efter mötet. Ju längre möte och ju större modell, desto längre tid. "
-             "Large v3 ger bäst resultat men är långsammast.")
+        faq("Varför tar transkriptionen tid?",
+            "Appen transkriberar i realtid medan mötet pågår och avslutar bearbetningen "
+            "direkt efter mötet. Ju längre möte och ju större modell, desto längre tid. "
+            "Large v3 ger bäst resultat men är långsammast.")
         spacer()
-        para("Sparas mina inspelningar?\n"
-             "Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
-             "transkriptet och anteckningarna sparas när du exporterar.")
+        faq("Sparas mina inspelningar?",
+            "Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
+            "transkriptet och anteckningarna sparas när du exporterar.")
         spacer()
-        para("Vad kostar det att använda Claude AI?\n"
-             "Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
-             "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing.")
+        faq("Vad kostar det att använda Claude AI?",
+            "Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
+            "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing.")
         spacer()
 
         # ── Close button — lives OUTSIDE the Text widget ──────────────────────
