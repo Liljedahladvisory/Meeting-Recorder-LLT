@@ -659,39 +659,27 @@ class MeetingRecorder(tk.Tk):
         y = self.winfo_y() + (self.winfo_height() - h) // 2
         dlg.geometry(f"{w}x{h}+{x}+{y}")
 
-        # Scrollable content
+        # Scrollable content — using Text widget for native macOS trackpad scroll
         outer = tk.Frame(dlg, bg=BG)
         outer.pack(fill="both", expand=True, padx=36, pady=28)
 
-        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0)
-        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=sb.set)
+        txt_scroll = tk.Text(outer, bg=BG, highlightthickness=0, bd=0,
+                             cursor="arrow", wrap="none", state="disabled",
+                             spacing1=0, spacing3=0)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=txt_scroll.yview)
+        txt_scroll.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        txt_scroll.pack(side="left", fill="both", expand=True)
 
-        inner = tk.Frame(canvas, bg=BG)
-        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner = tk.Frame(txt_scroll, bg=BG)
+        txt_scroll.configure(state="normal")
+        txt_scroll.window_create("1.0", window=inner, stretch=True)
+        txt_scroll.configure(state="disabled")
 
-        def on_resize(e):
-            canvas.itemconfig(win_id, width=e.width)
-        canvas.bind("<Configure>", on_resize)
-        inner.bind("<Configure>", lambda e: canvas.configure(
-            scrollregion=canvas.bbox("all")))
-
-        # Trackpad / mousewheel scroll
-        # bind_all misses child widgets on macOS; bind recursively instead.
-        # Use sign-only scrolling so tiny/fractional deltas still register.
-        def _on_scroll(event):
-            canvas.yview_scroll(-3 if event.delta > 0 else 3, "units")
-            return "break"
-
-        def _bind_scroll(widget):
-            try:
-                widget.bind("<MouseWheel>", _on_scroll)
-            except Exception:
-                pass
-            for child in widget.winfo_children():
-                _bind_scroll(child)
+        # Resize inner to match text widget width
+        def _on_outer_resize(e):
+            inner.configure(width=e.width - 20)  # account for scrollbar
+        txt_scroll.bind("<Configure>", _on_outer_resize)
 
         def section(title):
             tk.Label(inner, text=title,
@@ -781,9 +769,6 @@ class MeetingRecorder(tk.Tk):
                               padx=24, pady=9, radius=10,
                               command=dlg.destroy)
         close.pack(pady=(8, 0))
-
-        # Bind scroll to every widget in the dialog AFTER all content is created
-        _bind_scroll(dlg)
 
     def _show_settings_dialog(self):
         self._open_name_dialog(
