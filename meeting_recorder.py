@@ -1248,47 +1248,92 @@ class MeetingRecorder(tk.Tk):
                 pdf.ln(extra_ln)
 
         def render_table(rows):
-            """Render a list of cell-lists as a clean monochrome PDF table."""
+            """Render a list of cell-lists as a PDF table with wrapping text."""
             if not rows:
                 return
             n_cols = max(len(r) for r in rows)
             if n_cols == 0:
                 return
-            col_w = pw / n_cols
-            row_h = 7
-            header = rows[0]
-            body   = rows[1:]
+
+            PAD = 2.5   # mm horizontal padding each side
+            LH  = 5.0   # base line height mm
+
+            # Measure max single-line content width per column for proportioning
+            col_max = [0.0] * n_cols
+            for ri, row in enumerate(rows):
+                st = "B" if ri == 0 else ""
+                pdf.set_font("Helvetica", st, 9)
+                for ci in range(n_cols):
+                    txt = row[ci].strip() if ci < len(row) else ""
+                    col_max[ci] = max(col_max[ci], pdf.get_string_width(txt))
+
+            total = sum(col_max) or n_cols
+            # Distribute page width proportionally; minimum 18 mm per col
+            raw = [max(18.0, col_max[c] / total * pw) for c in range(n_cols)]
+            scale = pw / sum(raw)
+            col_widths = [w * scale for w in raw]
+
+            def wrapped_lines(text, avail, style=""):
+                """Count lines needed for text in avail mm width."""
+                pdf.set_font("Helvetica", style, 9)
+                if not text:
+                    return 1
+                lines, line_w = 1, 0.0
+                for word in text.split():
+                    ww = pdf.get_string_width(word + " ")
+                    if line_w + ww > avail and line_w > 0:
+                        lines += 1; line_w = ww
+                    else:
+                        line_w += ww
+                return lines
 
             pdf.set_draw_color(180, 180, 180)
+            pdf.set_line_width(0.3)
 
-            # Header row — bold, underlined by top border
-            y_start = pdf.get_y()
-            pdf.line(L, y_start, L + pw, y_start)
-            for ci, cell in enumerate(header):
-                pdf.set_font("Helvetica", "B", 9)
-                pdf.set_text_color(30, 30, 30)
-                pdf.set_xy(L + ci * col_w, pdf.get_y())
-                pdf.cell(col_w, row_h, cell.strip(), border=0, align="L")
-            pdf.ln(row_h)
-            y_line = pdf.get_y()
-            pdf.line(L, y_line, L + pw, y_line)
+            for ri, row in enumerate(rows):
+                is_hdr = ri == 0
+                st = "B" if is_hdr else ""
 
-            # Body rows
-            for row in body:
-                for ci in range(n_cols):
-                    cell = row[ci].strip() if ci < len(row) else ""
-                    pdf.set_font("Helvetica", "", 9)
-                    pdf.set_text_color(50, 50, 50)
-                    pdf.set_xy(L + ci * col_w, pdf.get_y())
-                    pdf.cell(col_w, row_h, cell, border=0, align="L")
-                pdf.ln(row_h)
+                # Pre-calculate row height from tallest cell
+                max_lines = max(
+                    wrapped_lines(
+                        (row[ci].strip() if ci < len(row) else ""),
+                        col_widths[ci] - 2 * PAD, st
+                    )
+                    for ci in range(n_cols)
+                )
+                row_h = max_lines * LH + 2 * PAD + 1
+
+                # Page-break guard
+                if pdf.get_y() + row_h > pdf.h - pdf.b_margin:
+                    pdf.add_page()
+
+                y0 = pdf.get_y()
+
+                if is_hdr:
+                    pdf.line(L, y0, L + pw, y0)   # top border
+
+                # Render each cell
+                for ci, cw in enumerate(col_widths):
+                    txt = row[ci].strip() if ci < len(row) else ""
+                    pdf.set_font("Helvetica", st, 9)
+                    pdf.set_text_color(30, 30, 30)
+                    pdf.set_xy(L + sum(col_widths[:ci]) + PAD, y0 + PAD)
+                    pdf.multi_cell(cw - 2 * PAD, LH, txt,
+                                   align="L", new_x="RIGHT", new_y="TOP")
+
+                pdf.set_y(y0 + row_h)   # advance to bottom of row
+
+                # Separator after header
+                if is_hdr:
+                    pdf.line(L, pdf.get_y(), L + pw, pdf.get_y())
 
             # Bottom border
-            y = pdf.get_y()
-            pdf.line(L, y, L + pw, y)
+            pdf.line(L, pdf.get_y(), L + pw, pdf.get_y())
             pdf.set_text_color(0, 0, 0)
             pdf.set_draw_color(0, 0, 0)
-            pdf.ln(3)
+            pdf.set_line_width(0.2)
+            pdf.ln(4)
 
         # Collect table rows across consecutive | lines
         table_buf = []
