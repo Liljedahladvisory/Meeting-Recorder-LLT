@@ -649,67 +649,106 @@ class MeetingRecorder(tk.Tk):
     def _show_help_dialog(self):
         dlg = tk.Toplevel(self)
         dlg.title("Hjälp & FAQ")
-        dlg.configure(bg=BG)
+        dlg.configure(bg=BG2)
         dlg.resizable(False, False)
         dlg.grab_set()
 
         self.update_idletasks()
-        w, h = 560, 620
+        w, h = 580, 640
         x = self.winfo_x() + (self.winfo_width()  - w) // 2
         y = self.winfo_y() + (self.winfo_height() - h) // 2
         dlg.geometry(f"{w}x{h}+{x}+{y}")
 
-        # Scrollable content — using Text widget for native macOS trackpad scroll
-        outer = tk.Frame(dlg, bg=BG)
-        outer.pack(fill="both", expand=True, padx=36, pady=28)
-
-        txt_scroll = tk.Text(outer, bg=BG, highlightthickness=0, bd=0,
-                             cursor="arrow", wrap="none", state="disabled",
-                             spacing1=0, spacing3=0)
-        sb = ttk.Scrollbar(outer, orient="vertical", command=txt_scroll.yview)
-        txt_scroll.configure(yscrollcommand=sb.set)
+        # ── Pure tk.Text with tags — the ONLY approach that gives native
+        #    macOS trackpad scroll support. No embedded windows/frames inside.
+        txt = tk.Text(
+            dlg,
+            bg=BG, fg=FG,
+            wrap="word",
+            state="disabled",
+            highlightthickness=0,
+            bd=0,
+            padx=36,
+            pady=28,
+            cursor="arrow",
+            spacing1=0,
+            spacing2=0,
+            spacing3=6,
+            relief="flat",
+        )
+        sb = ttk.Scrollbar(dlg, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        txt_scroll.pack(side="left", fill="both", expand=True)
+        txt.pack(side="top", fill="both", expand=True)
 
-        inner = tk.Frame(txt_scroll, bg=BG)
-        txt_scroll.configure(state="normal")
-        txt_scroll.window_create("1.0", window=inner, stretch=True)
-        txt_scroll.configure(state="disabled")
+        # ── Tags ──────────────────────────────────────────────────────────────
+        txt.tag_configure("title",
+                          font=("Helvetica Neue", 15, "bold"),
+                          foreground=FG,
+                          spacing1=0, spacing3=4)
+        txt.tag_configure("powered",
+                          font=("Helvetica Neue", 10, "italic"),
+                          foreground=FG_DIM,
+                          spacing1=0, spacing3=18)
+        txt.tag_configure("section",
+                          font=("Helvetica Neue", 11, "bold"),
+                          foreground=ACCENT,
+                          spacing1=18, spacing3=2)
+        txt.tag_configure("rule",
+                          font=("Helvetica Neue", 1),
+                          foreground=BORDER,
+                          background=BORDER,
+                          spacing1=0, spacing3=8)
+        txt.tag_configure("body",
+                          font=("Helvetica Neue", 12),
+                          foreground=FG2,
+                          spacing1=4, spacing3=0,
+                          lmargin1=0, lmargin2=0)
+        txt.tag_configure("step_num",
+                          font=("Helvetica Neue", 11, "bold"),
+                          foreground=ACCENT,
+                          spacing1=5, spacing3=0)
+        txt.tag_configure("step_txt",
+                          font=("Helvetica Neue", 12),
+                          foreground=FG2,
+                          spacing1=0, spacing3=0,
+                          lmargin1=22, lmargin2=22)
+        txt.tag_configure("tip",
+                          font=("Helvetica Neue", 11, "italic"),
+                          foreground=FG_DIM,
+                          spacing1=6, spacing3=0,
+                          lmargin1=0, lmargin2=0)
+        txt.tag_configure("spacer",
+                          font=("Helvetica Neue", 6),
+                          spacing1=0, spacing3=0)
 
-        # Resize inner to match text widget width
-        def _on_outer_resize(e):
-            inner.configure(width=e.width - 20)  # account for scrollbar
-        txt_scroll.bind("<Configure>", _on_outer_resize)
+        # ── Helper to insert content ──────────────────────────────────────────
+        def ins(tag, text):
+            txt.configure(state="normal")
+            txt.insert("end", text, tag)
+            txt.configure(state="disabled")
 
         def section(title):
-            tk.Label(inner, text=title,
-                     font=("Helvetica Neue", 12, "bold"),
-                     bg=BG, fg=ACCENT, anchor="w").pack(fill="x", pady=(18, 4))
-            tk.Frame(inner, bg=BORDER, height=1).pack(fill="x")
+            ins("section", title + "\n")
+            ins("rule", "─" * 68 + "\n")
 
         def para(text):
-            tk.Label(inner, text=text, font=FONT_S, bg=BG, fg=FG2,
-                     wraplength=460, justify="left", anchor="w").pack(
-                         fill="x", pady=(6, 0))
+            ins("body", text + "\n")
 
         def step(n, text):
-            row = tk.Frame(inner, bg=BG)
-            row.pack(fill="x", pady=(6, 0))
-            tk.Label(row, text=str(n), font=("Menlo", 10, "bold"),
-                     bg=ACCENT, fg="#FFFFFF", width=2, anchor="center",
-                     pady=1).pack(side="left")
-            tk.Label(row, text=f"  {text}", font=FONT_S, bg=BG, fg=FG2,
-                     wraplength=420, justify="left", anchor="w").pack(
-                         side="left", fill="x", expand=True)
+            ins("step_num", f"  {n}.  ")
+            ins("step_txt", text + "\n")
 
-        # ── Title ──
-        tk.Label(inner, text="Hjälp & FAQ",
-                 font=("Helvetica Neue", 15, "bold"),
-                 bg=BG, fg=FG).pack(anchor="w", pady=(0, 4))
-        tk.Label(inner, text="Meeting Recorder · Powered by Liljedahl Legal Tech",
-                 font=FONT_POWERED, bg=BG, fg=FG_DIM).pack(anchor="w")
+        def tip(text):
+            ins("tip", text + "\n")
 
-        # ── Kom igång ──
+        def spacer():
+            ins("spacer", "\n")
+
+        # ── Content ───────────────────────────────────────────────────────────
+        ins("title",   "Hjälp & FAQ\n")
+        ins("powered", "Meeting Recorder  ·  Powered by Liljedahl Legal Tech\n")
+
         section("Kom igång")
         para("Appen spelar in ditt möte via mikrofon, transkriberar det med "
              "Whisper och genererar strukturerade mötesanteckningar med Claude AI.")
@@ -720,55 +759,57 @@ class MeetingRecorder(tk.Tk):
         step(5, "Klicka Avsluta möte när mötet är klart.")
         step(6, "Klicka Generera anteckningar och välj sedan Spara.")
 
-        # ── API-nyckel ──
         section("Hur skaffar jag en API-nyckel?")
-        para("API-nyckeln är det som låter appen kommunicera med Claude AI. "
+        para("API-nyckeln låter appen kommunicera med Claude AI. "
              "Du betalar per användning direkt till Anthropic — inte till Liljedahl Legal Tech.")
         step(1, "Gå till console.anthropic.com och skapa ett konto.")
         step(2, "Klicka på 'API Keys' i menyn till vänster.")
         step(3, "Klicka 'Create Key', ge den ett namn (t.ex. 'Meeting Recorder').")
         step(4, "Kopiera nyckeln — den börjar med 'sk-ant-'.")
-        step(5, "Klistra in den i fältet API-nyckel i appen. Den sparas automatiskt.")
-        para("💡 Nyckeln sparas säkert i macOS Nyckelring och behöver bara anges en gång.")
+        step(5, "Klistra in den i API-nyckelfältet i appen. Den sparas automatiskt.")
+        tip("💡 Nyckeln sparas säkert i macOS Nyckelring och behöver bara anges en gång.")
 
-        # ── Whisper-modell ──
         section("Vilken transkriptionsmodell ska jag välja?")
-        para("Small — snabbast, bra för korta möten och tydligt tal.\n"
-             "Medium — rekommenderas för de flesta möten (standard).\n"
-             "Large v3 — bäst kvalitet, tar längre tid, lämplig för komplexa möten.")
+        step("Small",    "Snabbast, bra för korta möten och tydligt tal.")
+        step("Medium",   "Rekommenderas för de flesta möten (standard).")
+        step("Large v3", "Bäst kvalitet, tar längre tid — lämplig för komplexa möten.")
 
-        # ── Exportformat ──
         section("Exportformat")
-        para(".md (Markdown) — öppnas i valfri textredigerare, t.ex. Obsidian eller Notion.\n"
-             ".docx (Word) — öppnas direkt i Microsoft Word eller Pages.\n"
-             ".pdf — lämplig för att skicka anteckningar till kunder eller kollegor.")
+        step(".md",   "Markdown — öppnas i Obsidian, Notion eller valfri textredigerare.")
+        step(".docx", "Word — öppnas direkt i Microsoft Word eller Pages.")
+        step(".pdf",  "PDF — lämplig för att skicka anteckningar till kunder eller kollegor.")
 
-        # ── Vanliga frågor ──
         section("Vanliga frågor")
-        para("Varför kan jag inte generera anteckningar direkt?\n"
-             "När du avslutar mötet fortsätter appen att transkribera eventuellt "
-             "kvarvarande ljud i bakgrunden. Knappen 'Generera anteckningar' aktiveras "
-             "automatiskt så snart transkriptionen är klar — du behöver inte göra något, "
-             "bara vänta en stund. Hur länge beror på mötets längd och vald modell.")
+        para("Varför kan jag inte generera anteckningar direkt efter mötet?\n"
+             "När du avslutar mötet fortsätter appen transkribera kvarvarande ljud i "
+             "bakgrunden. En statusrad visar hur långt transkriptionen kommit. Knappen "
+             "'Generera anteckningar' aktiveras automatiskt när allt är klart — "
+             "vänta bara tills statusraden försvinner. Hur lång tid det tar beror på "
+             "mötets längd och vald Whisper-modell.")
+        spacer()
         para("Varför tar transkriptionen tid?\n"
-             "Appen transkriberar i realtid medan mötet pågår. Ju längre möte och "
-             "ju större Whisper-modell, desto längre tid. Large v3 är långsammast men "
-             "ger bäst resultat.")
+             "Appen transkriberar i realtid medan mötet pågår och avslutar bearbetningen "
+             "direkt efter mötet. Ju längre möte och ju större modell, desto längre tid. "
+             "Large v3 ger bäst resultat men är långsammast.")
+        spacer()
         para("Sparas mina inspelningar?\n"
              "Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
              "transkriptet och anteckningarna sparas när du exporterar.")
+        spacer()
         para("Vad kostar det att använda Claude AI?\n"
              "Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
              "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing.")
+        spacer()
 
-        # ── Close button ──
-        tk.Frame(inner, bg=BG, height=12).pack()
-        close = RoundedButton(inner, text="Stäng", style="solid",
+        # ── Close button — lives OUTSIDE the Text widget ──────────────────────
+        btn_bar = tk.Frame(dlg, bg=BG2, pady=14)
+        btn_bar.pack(fill="x", side="bottom")
+        close = RoundedButton(btn_bar, text="Stäng", style="solid",
                               bg=ACCENT, fg="#FFFFFF",
                               font_spec=("Helvetica Neue", 12),
-                              padx=24, pady=9, radius=10,
+                              padx=28, pady=9, radius=10,
                               command=dlg.destroy)
-        close.pack(pady=(8, 0))
+        close.pack()
 
     def _show_settings_dialog(self):
         self._open_name_dialog(
