@@ -674,13 +674,20 @@ class MeetingRecorder(tk.Tk):
         inner.bind("<Configure>", lambda e: canvas.configure(
             scrollregion=canvas.bbox("all")))
 
-        # Trackpad / mousewheel scroll — bind_all while dialog is open
+        # Trackpad / mousewheel scroll
+        # bind_all misses child widgets on macOS; bind recursively instead.
+        # Use sign-only scrolling so tiny/fractional deltas still register.
         def _on_scroll(event):
-            canvas.yview_scroll(int(-1 * event.delta), "units")
+            canvas.yview_scroll(-3 if event.delta > 0 else 3, "units")
             return "break"
 
-        canvas.bind_all("<MouseWheel>", _on_scroll)
-        dlg.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+        def _bind_scroll(widget):
+            try:
+                widget.bind("<MouseWheel>", _on_scroll)
+            except Exception:
+                pass
+            for child in widget.winfo_children():
+                _bind_scroll(child)
 
         def section(title):
             tk.Label(inner, text=title,
@@ -770,6 +777,9 @@ class MeetingRecorder(tk.Tk):
                               padx=24, pady=9, radius=10,
                               command=dlg.destroy)
         close.pack(pady=(8, 0))
+
+        # Bind scroll to every widget in the dialog AFTER all content is created
+        _bind_scroll(dlg)
 
     def _show_settings_dialog(self):
         self._open_name_dialog(
