@@ -622,6 +622,14 @@ class MeetingRecorder(tk.Tk):
         inner.bind("<Configure>", lambda e: canvas.configure(
             scrollregion=canvas.bbox("all")))
 
+        # Trackpad / mousewheel scroll — bind_all while dialog is open
+        def _on_scroll(event):
+            canvas.yview_scroll(int(-1 * event.delta), "units")
+            return "break"
+
+        canvas.bind_all("<MouseWheel>", _on_scroll)
+        dlg.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
         def section(title):
             tk.Label(inner, text=title,
                      font=("Helvetica Neue", 12, "bold"),
