@@ -34,8 +34,8 @@ UninstallDisplayName={#AppName}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Skapa genväg på skrivbordet"; GroupDescription: "Ytterligare ikoner:"; Flags: unchecked
-Name: "startmenuicon"; Description: "Skapa genväg i startmenyn"; GroupDescription: "Ytterligare ikoner:"; Flags: checked
+Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "startmenuicon"; Description: "Create Start Menu shortcut"; GroupDescription: "Additional icons:"
 
 [Files]
 ; Main app (all files from PyInstaller output)
