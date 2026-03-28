@@ -135,10 +135,14 @@ class RoundedButton(tk.Canvas):
         fill, fg = self._resolve_fill()
         outline = fg if self._style == "ghost" else fill
 
-        # Smooth rounded-rectangle polygon
-        pts = [r, 0,  w-r, 0,  w, 0,  w, r,
-               w, h-r,  w, h,  w-r, h,  r, h,
-               0, h,  0, h-r,  0, r,  0, 0]
+        # Inset by 1 px so the outline is never clipped by the canvas edge
+        m = 1
+        x0, y0, x1, y1 = m, m, w - m, h - m
+
+        # Smooth rounded-rectangle polygon (inset)
+        pts = [x0+r, y0,  x1-r, y0,  x1, y0,  x1, y0+r,
+               x1, y1-r,  x1, y1,  x1-r, y1,  x0+r, y1,
+               x0, y1,  x0, y1-r,  x0, y0+r,  x0, y0]
         self.create_polygon(pts, smooth=True,
                             fill=fill, outline=outline, width=1)
         self.create_text(w // 2, h // 2, text=self._text,
