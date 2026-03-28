@@ -249,6 +249,7 @@ class MeetingRecorder(tk.Tk):
 
         self.transcription_queue          = queue.Queue()
         self.pending_transcriptions       = 0
+        self._total_to_transcribe         = 0
         self._transcription_worker_thread = None
 
         self._build_ui()
@@ -267,6 +268,7 @@ class MeetingRecorder(tk.Tk):
         self._build_config()
         self._build_audio_source()
         self._build_buttons()
+        self._build_progress()
         self._build_tabs()
         self._build_status()
 
@@ -418,6 +420,7 @@ class MeetingRecorder(tk.Tk):
     def _build_buttons(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=20)
         outer.pack(fill="x")
+        self._btn_frame = outer   # anchor for progress bar placement
 
         btn_row = tk.Frame(outer, bg=BG)
         btn_row.pack(fill="x")
@@ -472,6 +475,55 @@ class MeetingRecorder(tk.Tk):
             btn.pack(side="left", padx=(0, 6))
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+
+    def _build_progress(self):
+        """Orange progress bar shown while transcribing after meeting ends."""
+        self._progress_frame = tk.Frame(self, bg=BG)
+        # Not packed until needed — shown by _show_progress_bar()
+
+        inner = tk.Frame(self._progress_frame, bg=BG, padx=32, pady=0)
+        inner.pack(fill="x")
+
+        lbl_row = tk.Frame(inner, bg=BG)
+        lbl_row.pack(fill="x", pady=(10, 5))
+        tk.Label(lbl_row, text="TRANSKRIBERAR",
+                 font=FONT_SECTION, bg=BG, fg=ACCENT).pack(side="left")
+        self._progress_label = tk.Label(lbl_row, text="",
+                 font=FONT_XS, bg=BG, fg=FG2)
+        self._progress_label.pack(side="left", padx=(10, 0))
+
+        # Track (dark background strip)
+        self._progress_track = tk.Canvas(inner, bg=BG3, height=6,
+                                         highlightthickness=0, bd=0)
+        self._progress_track.pack(fill="x", pady=(0, 10))
+        self._progress_track.bind("<Configure>", self._redraw_progress)
+        self._progress_fraction = 0.0
+
+        tk.Frame(self._progress_frame, bg=BORDER, height=1).pack(fill="x")
+
+    def _show_progress_bar(self):
+        self._progress_frame.pack(fill="x", after=self._btn_frame)
+        self._set_progress(0.0, "")
+
+    def _hide_progress_bar(self):
+        self._progress_frame.pack_forget()
+
+    def _set_progress(self, fraction: float, label: str):
+        self._progress_fraction = max(0.0, min(1.0, fraction))
+        self._progress_label.config(text=label)
+        self._redraw_progress()
+
+    def _redraw_progress(self, _=None):
+        c = self._progress_track
+        c.delete("fill")
+        w = c.winfo_width()
+        h = c.winfo_height()
+        if w <= 1:
+            return
+        fill_w = int(w * self._progress_fraction)
+        if fill_w > 0:
+            c.create_rectangle(0, 0, fill_w, h,
+                                fill=ACCENT, outline=ACCENT, tags="fill")
 
     def _build_tabs(self):
         tab_bar = tk.Frame(self, bg=BG, padx=32)
@@ -918,6 +970,10 @@ class MeetingRecorder(tk.Tk):
         self._set_rec_btn_enabled(False)
         self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
         self._log("Ljud stoppat. Väntar på transkription…")
+        # Snapshot total chunks in queue at this moment (remainder may add 1 more)
+        self._total_to_transcribe = self.pending_transcriptions
+        if self._total_to_transcribe > 0:
+            self._show_progress_bar()
         threading.Thread(target=self._wait_for_transcription, daemon=True).start()
 
     def _wait_for_transcription(self):
@@ -934,6 +990,9 @@ class MeetingRecorder(tk.Tk):
         if self.transcript_parts:
             self.notes_btn.config(state="normal", bg=BG, fg=ACCENT)
         self._log("Transkription klar.")
+        # Fill bar to 100% briefly, then hide
+        self._set_progress(1.0, "Transkription klar ✓")
+        self.after(1800, self._hide_progress_bar)
 
     # ── Audio capture ─────────────────────────────────────────────────────────
 
@@ -972,13 +1031,20 @@ class MeetingRecorder(tk.Tk):
 
     def _enqueue_transcription(self, chunk, idx):
         self.pending_transcriptions += 1
+        if not self.recording:
+            # Remainder chunk added after stop — grow the total accordingly
+            self._total_to_transcribe += 1
         self.transcription_queue.put((chunk, idx))
         self.after(0, self._update_pending_status)
 
     def _update_pending_status(self):
         if self.pending_transcriptions > 0 and not self.recording:
-            n = self.pending_transcriptions
+            n     = self.pending_transcriptions
+            total = self._total_to_transcribe
+            done  = total - n
+            frac  = done / total if total > 0 else 0.0
             self._set_status(f"Transkriberar — {n} {'del' if n == 1 else 'delar'} kvar…")
+            self._set_progress(frac, f"{done} av {total} delar klara")
 
     def _transcription_worker(self):
         while True:
