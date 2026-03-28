@@ -1,0 +1,82 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [windows]
+  workflow_dispatch:   # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          # Install CPU-only PyTorch (much smaller than GPU version)
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+          # Install app dependencies (skip torch — already installed above)
+          pip install `
+            faster-whisper `
+            pyannote.audio `
+            anthropic `
+            sounddevice `
+            numpy `
+            python-docx `
+            fpdf2 `
+            keyring `
+            requests
+
+          # Install PyInstaller
+          pip install pyinstaller
+
+      - name: Convert icon PNG to ICO
+        run: |
+          pip install Pillow
+          python -c "
+          from PIL import Image
+          img = Image.open('icon_source.png')
+          img.save('MeetingRecorder.ico', format='ICO',
+                   sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          print('Icon converted successfully')
+          "
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller `
+            --windowed `
+            --name "Meeting Recorder LLT" `
+            --icon MeetingRecorder.ico `
+            --add-data "MeetingRecorder.ico;." `
+            --add-data "revoked.json;." `
+            --hidden-import "pyannote.audio" `
+            --hidden-import "sounddevice" `
+            --collect-all "faster_whisper" `
+            --collect-all "pyannote" `
+            --noconfirm `
+            meeting_recorder.py
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Build Windows installer (.exe)
+        run: |
+          iscc installer.iss
+
+      - name: Upload installer as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetingRecorderLLT-Windows-Setup
+          path: Output\MeetingRecorderLLT-Setup.exe
+          retention-days: 30
