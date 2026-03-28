@@ -1344,23 +1344,38 @@ class MeetingRecorder(tk.Tk):
             if n_cols == 0:
                 return
 
-            PAD = 2.5   # mm horizontal padding each side
+            PAD = 2.0   # mm horizontal padding each side
             LH  = 5.0   # base line height mm
 
-            # Measure max single-line content width per column for proportioning
-            col_max = [0.0] * n_cols
-            for ri, row in enumerate(rows):
-                st = "B" if ri == 0 else ""
-                pdf.set_font("Helvetica", st, 9)
+            header = rows[0] if rows else []
+            body   = rows[1:] if len(rows) > 1 else []
+
+            # Step 1 — minimum width = header text + padding (guarantees no header wrap)
+            pdf.set_font("Helvetica", "B", 9)
+            min_w = []
+            for ci in range(n_cols):
+                h_txt = header[ci].strip() if ci < len(header) else ""
+                min_w.append(pdf.get_string_width(h_txt) + 2 * PAD + 3)
+
+            total_min = sum(min_w)
+            if total_min > pw:          # edge case: scale down if headers alone exceed width
+                scale = pw / total_min
+                min_w = [w * scale for w in min_w]
+
+            # Step 2 — distribute remaining space by max body-content width
+            remaining = pw - sum(min_w)
+            body_max = [0.0] * n_cols
+            pdf.set_font("Helvetica", "", 9)
+            for row in body:
                 for ci in range(n_cols):
                     txt = row[ci].strip() if ci < len(row) else ""
-                    col_max[ci] = max(col_max[ci], pdf.get_string_width(txt))
+                    body_max[ci] = max(body_max[ci], pdf.get_string_width(txt))
 
-            total = sum(col_max) or n_cols
-            # Distribute page width proportionally; minimum 18 mm per col
-            raw = [max(18.0, col_max[c] / total * pw) for c in range(n_cols)]
-            scale = pw / sum(raw)
-            col_widths = [w * scale for w in raw]
+            total_body = sum(body_max) or 1.0
+            col_widths = [
+                min_w[ci] + (body_max[ci] / total_body * remaining)
+                for ci in range(n_cols)
+            ]
 
             def wrapped_lines(text, avail, style=""):
                 """Count lines needed for text in avail mm width."""
