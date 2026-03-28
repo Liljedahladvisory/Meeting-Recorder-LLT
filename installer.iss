@@ -31,7 +31,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
 
 [Languages]
-Name: "swedish"; MessagesFile: "compiler:Languages\Default.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Skapa genväg på skrivbordet"; GroupDescription: "Ytterligare ikoner:"; Flags: unchecked
