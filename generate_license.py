@@ -24,11 +24,11 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# ── HMAC secret (must match the one in meeting_recorder.py) ──────────────────
-_LICENSE_HMAC_SECRET = bytes.fromhex(
-    "REDACTED_PART1"
-    "REDACTED_PART2"
-)
+# ── HMAC secret — lagras i license_secret.py (committas ALDRIG) ──────────────
+try:
+    from license_secret import LICENSE_HMAC_SECRET as _LICENSE_HMAC_SECRET
+except ImportError:
+    raise RuntimeError("license_secret.py saknas — den får aldrig committas till git.")
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 ADMIN_DIR = Path.home() / ".meeting-recorder-llt-admin"
