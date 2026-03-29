@@ -81,8 +81,8 @@ CHUNK_SECONDS = 20
 # ── License verification (HMAC-SHA256 — stdlib only) ─────────────────────────
 import hmac as _hmac
 _LICENSE_HMAC_SECRET = bytes.fromhex(
-    "REDACTED_PART1"
-    "REDACTED_PART2"
+    "ac274ebf4f3a4df69ffc72888328d9a7"
+    "17b67f5f593599804ce8bd01083bc150"
 )
 
 def _get_machine_id() -> str:
@@ -240,17 +240,384 @@ FONT_TIMER   = ("Menlo", 12)
 FONT_GEAR    = ("Helvetica Neue", 18)
 
 
+# ── Language / i18n ───────────────────────────────────────────────────────────
+_LANG = "sv"  # default, overridden from config on startup
+
+_STRINGS = {
+    "sv": {
+        # Config section
+        "KONFIGURATION": "KONFIGURATION",
+        "API-nyckel": "API-nyckel",
+        "visa": "visa",
+        "dölj": "dölj",
+        "Möte / titel": "Möte / titel",
+        "Deltagare": "Deltagare",
+        "namn, roll — kommaseparerade": "namn, roll — kommaseparerade",
+        "Språk": "Språk",
+        "Transkription": "Transkription",
+        "small_hint": "snabb",
+        "medium_hint": "balanserad",
+        "large_hint": "bäst kvalitet",
+        "Exportformat": "Exportformat",
+        # Microphone section
+        "MIKROFON": "MIKROFON",
+        "Enhet": "Enhet",
+        # Buttons
+        "Starta inspelning": "Starta inspelning",
+        "Avsluta möte": "Avsluta möte",
+        "Generera anteckningar": "Generera anteckningar",
+        "Spara": "Spara",
+        "Stäng": "Stäng",
+        "Avbryt": "Avbryt",
+        "Aktivera": "Aktivera",
+        "Avsluta": "Avsluta",
+        "Registrera & starta": "Registrera & starta",
+        "Jag har redan en nyckel": "Jag har redan en nyckel",
+        "Ange ny licensnyckel": "Ange ny licensnyckel",
+        "Spara inställningar": "Spara inställningar",
+        # Tabs
+        "Transkript": "Transkript",
+        "Mötesanteckningar": "Mötesanteckningar",
+        "Log": "Log",
+        # Status
+        "Redo.": "Redo.",
+        "Transkriberar...": "Transkriberar...",
+        "Genererar anteckningar...": "Genererar anteckningar...",
+        "Inspelning pågår": "Inspelning pågår",
+        "Klar": "Klar",
+        "Sparad": "Sparad",
+        # Settings dialog
+        "Inställningar": "Inställningar",
+        "Ändra namn eller företagsnamn:": "Ändra namn eller företagsnamn:",
+        "Ditt namn": "Ditt namn",
+        "Företagsnamn": "Företagsnamn",
+        "Spara anteckningar i": "Spara anteckningar i",
+        "Välj mapp": "Välj mapp",
+        "Format": "Format",
+        "Anthropic API-nyckel": "Anthropic API-nyckel",
+        "Välkommen till Meeting Recorder": "Välkommen till Meeting Recorder",
+        "setup_message": "Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
+        # Registration form
+        "reg_title": "Meeting Recorder LLT — Registrering",
+        "Registrera dig för att aktivera din licens:": "Registrera dig för att aktivera din licens:",
+        "Namn *": "Namn *",
+        "Adress *": "Adress *",
+        "Organisationsnummer": "Organisationsnummer",
+        "E-postadress *": "E-postadress *",
+        "Registrerar...": "Registrerar...",
+        "Välkommen": "Välkommen",
+        "reg_fill_name": "Fyll i ditt namn.",
+        "reg_fill_address": "Fyll i din adress.",
+        "reg_fill_email": "Ange en giltig e-postadress.",
+        "reg_cannot_create": "Kunde inte skapa licens: ",
+        "reg_welcome": "Välkommen, {name}! Din licens är aktiverad.",
+        # Activation
+        "act_title": "Meeting Recorder LLT — Aktivering",
+        "Ange din licensnyckel för att aktivera appen:": "Ange din licensnyckel för att aktivera appen:",
+        "Klistra in din licensnyckel ovan.": "Klistra in din licensnyckel ovan.",
+        # Expired
+        "exp_title": "Meeting Recorder LLT — Licens",
+        "Kontakta Liljedahl Legal Tech för förnyelse:": "Kontakta Liljedahl Legal Tech för att förnya din licens:\nsvante@liljedahladvisory.se",
+        "revoked_msg": "Din licens har spärrats. Kontakta Liljedahl Legal Tech.",
+        # Error messages
+        "API-nyckel saknas": "API-nyckel saknas",
+        "Fyll i Anthropic API-nyckel.": "Fyll i Anthropic API-nyckel.",
+        "Ingen inspelning att transkribera.": "Ingen inspelning att transkribera.",
+        "Ingen mikrofon": "Ingen mikrofon",
+        "Välj en mikrofonenhet.": "Välj en mikrofonenhet.",
+        # About dialog
+        "Om Meeting Recorder LLT": "Om Meeting Recorder LLT",
+        "Utvecklad av Liljedahl Advisory AB": "Utvecklad av Liljedahl Advisory AB",
+        "copyright": "© 2025–2026 Liljedahl Advisory AB.\nAlla rättigheter förbehållna.",
+        # Help dialog
+        "Hjälp & FAQ": "Hjälp & FAQ",
+        "help_title_line": "Hjälp & FAQ\n",
+        "help_powered_line": "Meeting Recorder  ·  Powered by Liljedahl Legal Tech\n",
+        "sec_kom_igang": "Kom igång",
+        "kom_igang_para": ("Appen spelar in ditt möte via mikrofon, transkriberar det med "
+                           "Whisper och genererar strukturerade mötesanteckningar med Claude AI."),
+        "step_1_igang": "Ange ditt namn eller företagsnamn i inställningarna (⚙).",
+        "step_2_igang": "Fyll i din Anthropic API-nyckel (se nedan hur du skaffar en).",
+        "step_3_igang": "Ange mötets titel och deltagare.",
+        "step_4_igang": "Klicka Starta inspelning när mötet börjar.",
+        "step_5_igang": "Klicka Avsluta möte när mötet är klart.",
+        "step_6_igang": "Klicka Generera anteckningar och välj sedan Spara.",
+        "sec_api_key": "Hur skaffar jag en API-nyckel?",
+        "api_key_para": ("API-nyckeln låter appen kommunicera med Claude AI. "
+                         "Du betalar per användning direkt till Anthropic — inte till Liljedahl Legal Tech."),
+        "step_1_api": "Gå till console.anthropic.com och skapa ett konto.",
+        "step_2_api": "Klicka på 'API Keys' i menyn till vänster.",
+        "step_3_api": "Klicka 'Create Key', ge den ett namn (t.ex. 'Meeting Recorder').",
+        "step_4_api": "Kopiera nyckeln — den börjar med 'sk-ant-'.",
+        "step_5_api": "Klistra in den i API-nyckelfältet i appen. Den sparas automatiskt.",
+        "tip_api": "💡 Nyckeln sparas säkert i macOS Nyckelring och behöver bara anges en gång.",
+        "sec_whisper": "Vilken transkriptionsmodell ska jag välja?",
+        "step_small_whisper": "Snabbast, bra för korta möten och tydligt tal.",
+        "step_medium_whisper": "Rekommenderas för de flesta möten (standard).",
+        "step_large_whisper": "Bäst kvalitet, tar längre tid — lämplig för komplexa möten.",
+        "sec_export": "Exportformat",
+        "step_md_export": "Markdown — öppnas i Obsidian, Notion eller valfri textredigerare.",
+        "step_docx_export": "Word — öppnas direkt i Microsoft Word eller Pages.",
+        "step_pdf_export": "PDF — lämplig för att skicka anteckningar till kunder eller kollegor.",
+        "sec_faq": "Vanliga frågor",
+        "faq_q1": "Varför kan jag inte generera anteckningar direkt efter mötet?",
+        "faq_a1": ("När du avslutar mötet fortsätter appen transkribera kvarvarande ljud i "
+                   "bakgrunden. En statusrad visar hur långt transkriptionen kommit. Knappen "
+                   "'Generera anteckningar' aktiveras automatiskt när allt är klart — "
+                   "vänta bara tills statusraden försvinner. Hur lång tid det tar beror på "
+                   "mötets längd och vald Whisper-modell."),
+        "faq_q2": "Varför tar transkriptionen tid?",
+        "faq_a2": ("Appen transkriberar i realtid medan mötet pågår och avslutar bearbetningen "
+                   "direkt efter mötet. Ju längre möte och ju större modell, desto längre tid. "
+                   "Large v3 ger bäst resultat men är långsammast."),
+        "faq_q3": "Sparas mina inspelningar?",
+        "faq_a3": ("Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
+                   "transkriptet och anteckningarna sparas när du exporterar."),
+        "faq_q4": "Vad kostar det att använda Claude AI?",
+        "faq_a4": ("Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
+                   "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing."),
+        # Menu items
+        "menu_help": "Hjälp",
+        "menu_help_faq": "Hjälp & FAQ…",
+        "menu_about": "Om Meeting Recorder LLT…",
+        "menu_arkiv": "Arkiv",
+        "menu_quit": "Avsluta",
+        # Save dialog
+        "Spara mötesanteckningar": "Spara mötesanteckningar",
+        "save_done_status": "Sparat: {path}",
+        "Sparfel": "Sparfel",
+        # Progress / transcription labels
+        "TRANSKRIBERAR": "TRANSKRIBERAR",
+        "transcription_done": "Transkription klar ✓",
+        "done_status": "Klart.  Klicka 'Generera anteckningar'.",
+        "generating_status": "Genererar mötesanteckningar med Claude…",
+        "notes_ready_status": "Anteckningar klara.  Klicka 'Spara' för att exportera.",
+        "notes_done_btn": "✓  Klara",
+        "generating_btn": "Genererar…",
+        # Language dialog
+        "lang_dialog_title": "Meeting Recorder LLT",
+        "lang_dialog_prompt": "Select language / Välj språk",
+        "lang_btn_sv": "🇸🇪  Svenska",
+        "lang_btn_en": "🇬🇧  English",
+        # Settings language row
+        "language_row_label": "Språk / Language",
+        "lang_restart_msg": "Starta om appen för att tillämpa det nya språket.",
+        # AI prompt language instruction
+        "ai_lang_instruction": "Skriv anteckningarna på svenska.",
+        # Default meeting word (used in filename/content)
+        "default_meeting": "Möte",
+        # Transcription chunk status (inline format strings used in code)
+        "transcribing_parts_left": "Transkriberar — {n} {part_word} kvar…",
+        "part_singular": "del",
+        "part_plural": "delar",
+        "parts_done_of": "{done} av {total} delar klara",
+        "transcribing_chunk": "Transkriberar del {i}  ({p} {remaining_word})…",
+        "remaining_more": "kvar",
+        "remaining_one": "återstår",
+    },
+    "en": {
+        # Config section
+        "KONFIGURATION": "CONFIGURATION",
+        "API-nyckel": "API key",
+        "visa": "show",
+        "dölj": "hide",
+        "Möte / titel": "Meeting / title",
+        "Deltagare": "Participants",
+        "namn, roll — kommaseparerade": "name, role — comma separated",
+        "Språk": "Language",
+        "Transkription": "Transcription",
+        "small_hint": "fast",
+        "medium_hint": "balanced",
+        "large_hint": "best quality",
+        "Exportformat": "Export format",
+        # Microphone section
+        "MIKROFON": "MICROPHONE",
+        "Enhet": "Device",
+        # Buttons
+        "Starta inspelning": "Start recording",
+        "Avsluta möte": "End meeting",
+        "Generera anteckningar": "Generate notes",
+        "Spara": "Save",
+        "Stäng": "Close",
+        "Avbryt": "Cancel",
+        "Aktivera": "Activate",
+        "Avsluta": "Quit",
+        "Registrera & starta": "Register & start",
+        "Jag har redan en nyckel": "I already have a key",
+        "Ange ny licensnyckel": "Enter new license key",
+        "Spara inställningar": "Save settings",
+        # Tabs
+        "Transkript": "Transcript",
+        "Mötesanteckningar": "Meeting notes",
+        "Log": "Log",
+        # Status
+        "Redo.": "Ready.",
+        "Transkriberar...": "Transcribing...",
+        "Genererar anteckningar...": "Generating notes...",
+        "Inspelning pågår": "Recording in progress",
+        "Klar": "Done",
+        "Sparad": "Saved",
+        # Settings dialog
+        "Inställningar": "Settings",
+        "Ändra namn eller företagsnamn:": "Change name or company name:",
+        "Ditt namn": "Your name",
+        "Företagsnamn": "Company name",
+        "Spara anteckningar i": "Save notes to",
+        "Välj mapp": "Choose folder",
+        "Format": "Format",
+        "Anthropic API-nyckel": "Anthropic API key",
+        "Välkommen till Meeting Recorder": "Welcome to Meeting Recorder",
+        "setup_message": "Enter your name or company name.\nIt is used in meeting notes and exported files.",
+        # Registration form
+        "reg_title": "Meeting Recorder LLT — Registration",
+        "Registrera dig för att aktivera din licens:": "Register to activate your license:",
+        "Namn *": "Name *",
+        "Adress *": "Address *",
+        "Organisationsnummer": "Organization number",
+        "E-postadress *": "Email address *",
+        "Registrerar...": "Registering...",
+        "Välkommen": "Welcome",
+        "reg_fill_name": "Please enter your name.",
+        "reg_fill_address": "Please enter your address.",
+        "reg_fill_email": "Please enter a valid email address.",
+        "reg_cannot_create": "Could not create license: ",
+        "reg_welcome": "Welcome, {name}! Your license is activated.",
+        # Activation
+        "act_title": "Meeting Recorder LLT — Activation",
+        "Ange din licensnyckel för att aktivera appen:": "Enter your license key to activate the app:",
+        "Klistra in din licensnyckel ovan.": "Paste your license key above.",
+        # Expired
+        "exp_title": "Meeting Recorder LLT — License",
+        "Kontakta Liljedahl Legal Tech för förnyelse:": "Contact Liljedahl Legal Tech for renewal:\nsvante@liljedahladvisory.se",
+        "revoked_msg": "Your license has been revoked. Contact Liljedahl Legal Tech.",
+        # Error messages
+        "API-nyckel saknas": "API key missing",
+        "Fyll i Anthropic API-nyckel.": "Please enter your Anthropic API key.",
+        "Ingen inspelning att transkribera.": "No recording to transcribe.",
+        "Ingen mikrofon": "No microphone",
+        "Välj en mikrofonenhet.": "Please select a microphone device.",
+        # About dialog
+        "Om Meeting Recorder LLT": "About Meeting Recorder LLT",
+        "Utvecklad av Liljedahl Advisory AB": "Developed by Liljedahl Advisory AB",
+        "copyright": "© 2025–2026 Liljedahl Advisory AB.\nAll rights reserved.",
+        # Help dialog
+        "Hjälp & FAQ": "Help & FAQ",
+        "help_title_line": "Help & FAQ\n",
+        "help_powered_line": "Meeting Recorder  ·  Powered by Liljedahl Legal Tech\n",
+        "sec_kom_igang": "Getting started",
+        "kom_igang_para": ("The app records your meeting via microphone, transcribes it with "
+                           "Whisper and generates structured meeting notes with Claude AI."),
+        "step_1_igang": "Enter your name or company name in settings (⚙).",
+        "step_2_igang": "Enter your Anthropic API key (see below on how to get one).",
+        "step_3_igang": "Enter the meeting title and participants.",
+        "step_4_igang": "Click Start recording when the meeting begins.",
+        "step_5_igang": "Click End meeting when the meeting is done.",
+        "step_6_igang": "Click Generate notes, then Save.",
+        "sec_api_key": "How do I get an API key?",
+        "api_key_para": ("The API key lets the app communicate with Claude AI. "
+                         "You pay per usage directly to Anthropic — not to Liljedahl Legal Tech."),
+        "step_1_api": "Go to console.anthropic.com and create an account.",
+        "step_2_api": "Click 'API Keys' in the left menu.",
+        "step_3_api": "Click 'Create Key', give it a name (e.g. 'Meeting Recorder').",
+        "step_4_api": "Copy the key — it starts with 'sk-ant-'.",
+        "step_5_api": "Paste it into the API key field in the app. It is saved automatically.",
+        "tip_api": "💡 The key is stored securely in macOS Keychain and only needs to be entered once.",
+        "sec_whisper": "Which transcription model should I choose?",
+        "step_small_whisper": "Fastest, good for short meetings and clear speech.",
+        "step_medium_whisper": "Recommended for most meetings (default).",
+        "step_large_whisper": "Best quality, takes longer — suitable for complex meetings.",
+        "sec_export": "Export formats",
+        "step_md_export": "Markdown — opens in Obsidian, Notion or any text editor.",
+        "step_docx_export": "Word — opens directly in Microsoft Word or Pages.",
+        "step_pdf_export": "PDF — suitable for sending notes to clients or colleagues.",
+        "sec_faq": "Frequently asked questions",
+        "faq_q1": "Why can't I generate notes immediately after the meeting?",
+        "faq_a1": ("When you end the meeting the app continues transcribing remaining audio in "
+                   "the background. A status bar shows transcription progress. The "
+                   "'Generate notes' button activates automatically when everything is ready — "
+                   "just wait until the status bar disappears. How long it takes depends on "
+                   "meeting length and the selected Whisper model."),
+        "faq_q2": "Why does transcription take time?",
+        "faq_a2": ("The app transcribes in real time while the meeting is ongoing and finishes "
+                   "processing right after the meeting. Longer meetings and larger models take more time. "
+                   "Large v3 gives the best results but is slowest."),
+        "faq_q3": "Are my recordings saved?",
+        "faq_a3": ("No. Audio is processed locally and never saved permanently. Only "
+                   "the transcript and notes are saved when you export."),
+        "faq_q4": "What does it cost to use Claude AI?",
+        "faq_a4": ("Anthropic charges per number of tokens (roughly words). A typical 30-minute "
+                   "meeting costs typically less than $0.10. See current prices at anthropic.com/pricing."),
+        # Menu items
+        "menu_help": "Help",
+        "menu_help_faq": "Help & FAQ…",
+        "menu_about": "About Meeting Recorder LLT…",
+        "menu_arkiv": "File",
+        "menu_quit": "Quit",
+        # Save dialog
+        "Spara mötesanteckningar": "Save meeting notes",
+        "save_done_status": "Saved: {path}",
+        "Sparfel": "Save error",
+        # Progress / transcription labels
+        "TRANSKRIBERAR": "TRANSCRIBING",
+        "transcription_done": "Transcription done ✓",
+        "done_status": "Done.  Click 'Generate notes'.",
+        "generating_status": "Generating meeting notes with Claude…",
+        "notes_ready_status": "Notes ready.  Click 'Save' to export.",
+        "notes_done_btn": "✓  Done",
+        "generating_btn": "Generating…",
+        # Language dialog
+        "lang_dialog_title": "Meeting Recorder LLT",
+        "lang_dialog_prompt": "Select language / Välj språk",
+        "lang_btn_sv": "🇸🇪  Svenska",
+        "lang_btn_en": "🇬🇧  English",
+        # Settings language row
+        "language_row_label": "Language / Språk",
+        "lang_restart_msg": "Restart the app to apply the new language.",
+        # AI prompt language instruction
+        "ai_lang_instruction": "Write the notes in English.",
+        # Default meeting word
+        "default_meeting": "Meeting",
+        # Transcription chunk status
+        "transcribing_parts_left": "Transcribing — {n} {part_word} remaining…",
+        "part_singular": "part",
+        "part_plural": "parts",
+        "parts_done_of": "{done} of {total} parts done",
+        "transcribing_chunk": "Transcribing part {i}  ({p} {remaining_word})…",
+        "remaining_more": "remaining",
+        "remaining_one": "left",
+    },
+}
+
+
+def T(key: str) -> str:
+    """Return the translated string for *key* in the current language."""
+    return _STRINGS.get(_LANG, _STRINGS["sv"]).get(key, key)
+
+
+def set_lang(lang: str):
+    global _LANG
+    _LANG = lang if lang in _STRINGS else "sv"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def load_config() -> dict:
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            # Ensure language key exists with default
+            if "language" not in data:
+                data["language"] = "sv"
+            return data
         except Exception:
             pass
-    return {}
+    return {"language": "sv"}
 
 
 def save_config(cfg: dict):
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
@@ -459,10 +826,10 @@ class MeetingRecorder(tk.Tk):
             menubar.add_cascade(menu=app_menu)
 
             help_menu = tk.Menu(menubar, name="help", tearoff=0)
-            menubar.add_cascade(label="Hjälp", menu=help_menu)
-            help_menu.add_command(label="Hjälp & FAQ…", command=self._show_help_dialog)
+            menubar.add_cascade(label=T("menu_help"), menu=help_menu)
+            help_menu.add_command(label=T("menu_help_faq"), command=self._show_help_dialog)
             help_menu.add_separator()
-            help_menu.add_command(label="Om Meeting Recorder LLT…", command=self._show_about_dialog)
+            help_menu.add_command(label=T("menu_about"), command=self._show_about_dialog)
 
             # macOS native hooks
             self.createcommand("tkAboutDialog", self._show_about_dialog)
@@ -471,18 +838,18 @@ class MeetingRecorder(tk.Tk):
         else:
             # ── Windows: standard menu bar ──
             app_menu = tk.Menu(menubar, tearoff=0)
-            menubar.add_cascade(label="Arkiv", menu=app_menu)
-            app_menu.add_command(label="Om Meeting Recorder LLT…", command=self._show_about_dialog)
+            menubar.add_cascade(label=T("menu_arkiv"), menu=app_menu)
+            app_menu.add_command(label=T("menu_about"), command=self._show_about_dialog)
             app_menu.add_separator()
-            app_menu.add_command(label="Avsluta", command=self.quit)
+            app_menu.add_command(label=T("menu_quit"), command=self.quit)
 
             help_menu = tk.Menu(menubar, tearoff=0)
-            menubar.add_cascade(label="Hjälp", menu=help_menu)
-            help_menu.add_command(label="Hjälp & FAQ…", command=self._show_help_dialog)
+            menubar.add_cascade(label=T("menu_help"), menu=help_menu)
+            help_menu.add_command(label=T("menu_help_faq"), command=self._show_help_dialog)
 
     def _show_about_dialog(self):
         dlg = tk.Toplevel(self)
-        dlg.title("Om Meeting Recorder LLT")
+        dlg.title(T("Om Meeting Recorder LLT"))
         dlg.configure(bg=BG2)
         dlg.resizable(False, False)
         dlg.grab_set()
@@ -516,7 +883,7 @@ class MeetingRecorder(tk.Tk):
         ).pack(pady=(8, 4))
 
         tk.Label(
-            inner, text="Utvecklad av Liljedahl Advisory AB",
+            inner, text=T("Utvecklad av Liljedahl Advisory AB"),
             font=FONT_S, bg=BG2, fg=FG2,
         ).pack(pady=(0, 4))
 
@@ -527,7 +894,7 @@ class MeetingRecorder(tk.Tk):
 
         tk.Label(
             inner,
-            text="\u00a9 2025\u20132026 Liljedahl Advisory AB.\nAlla r\u00e4ttigheter f\u00f6rbeh\u00e5llna.",
+            text=T("copyright"),
             font=("Helvetica Neue", 9), bg=BG2, fg=FG_DIM,
             justify="center",
         ).pack(pady=(8, 16))
@@ -536,7 +903,7 @@ class MeetingRecorder(tk.Tk):
         btn_bar = tk.Frame(dlg, bg=BG2, pady=10)
         btn_bar.pack(fill="x", side="bottom")
         close = RoundedButton(
-            btn_bar, text="St\u00e4ng", style="primary",
+            btn_bar, text=T("Stäng"), style="primary",
             padx=28, pady=8, command=dlg.destroy,
         )
         close.pack()
@@ -599,7 +966,7 @@ class MeetingRecorder(tk.Tk):
     def _build_config(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=20)
         outer.pack(fill="x")
-        self._section_label(outer, "KONFIGURATION")
+        self._section_label(outer, T("KONFIGURATION"))
         card = self._card(outer)
 
         def field(parent, label, var, show=None, hint=None):
@@ -620,22 +987,23 @@ class MeetingRecorder(tk.Tk):
                          bg=BG2, fg=FG_DIM).pack(side="left", padx=(10, 0))
             return e, row
 
-        self._key_entry, r1 = field(card, "API-nyckel", self.api_key, show="•")
-        tk.Button(r1, text="visa", font=FONT_XS,
-                  bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
-                  padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
-                  command=lambda: self._key_entry.config(
-                      show="" if self._key_entry.cget("show") == "•" else "•")
-                  ).pack(side="left", padx=(6, 0))
+        self._key_entry, r1 = field(card, T("API-nyckel"), self.api_key, show="•")
+        self._show_hide_btn = tk.Button(
+            r1, text=T("visa"), font=FONT_XS,
+            bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
+            padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
+            command=self._toggle_key_visibility,
+        )
+        self._show_hide_btn.pack(side="left", padx=(6, 0))
 
-        field(card, "Möte / titel", self.meeting_title)
-        field(card, "Deltagare", self.participants,
-              hint="namn, roll — kommaseparerade")
+        field(card, T("Möte / titel"), self.meeting_title)
+        field(card, T("Deltagare"), self.participants,
+              hint=T("namn, roll — kommaseparerade"))
 
-        # Language row
+        # Language row (transcription language, not UI language)
         lang_row = tk.Frame(card, bg=BG2)
         lang_row.pack(fill="x", pady=6)
-        tk.Label(lang_row, text="Språk", font=FONT_S, bg=BG2, fg=FG2,
+        tk.Label(lang_row, text=T("Språk"), font=FONT_S, bg=BG2, fg=FG2,
                  width=16, anchor="w").pack(side="left")
         for val, lbl in [("sv", "Svenska"), ("en", "English")]:
             tk.Radiobutton(lang_row, text=lbl, variable=self.language, value=val,
@@ -647,28 +1015,36 @@ class MeetingRecorder(tk.Tk):
         # Whisper model row
         model_row = tk.Frame(card, bg=BG2)
         model_row.pack(fill="x", pady=6)
-        tk.Label(model_row, text="Transkription", font=FONT_S, bg=BG2, fg=FG2,
+        tk.Label(model_row, text=T("Transkription"), font=FONT_S, bg=BG2, fg=FG2,
                  width=16, anchor="w").pack(side="left")
-        for val, lbl, hint in [
-            ("small",    "Small",    "snabb"),
-            ("medium",   "Medium",   "balanserad"),
-            ("large-v3", "Large v3", "bäst kvalitet"),
+        for val, lbl, hint_key in [
+            ("small",    "Small",    "small_hint"),
+            ("medium",   "Medium",   "medium_hint"),
+            ("large-v3", "Large v3", "large_hint"),
         ]:
             grp = tk.Frame(model_row, bg=BG2)
             grp.pack(side="left", padx=(0, 6))
-            tk.Radiobutton(grp, text=f"{lbl}  ({hint})", variable=self.whisper_size, value=val,
+            tk.Radiobutton(grp, text=f"{lbl}  ({T(hint_key)})", variable=self.whisper_size, value=val,
                            font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
                            activebackground=BG4, activeforeground=FG,
                            indicatoron=False, relief="solid", bd=1,
                            padx=10, pady=3, cursor="hand2").pack(side="left")
 
+    def _toggle_key_visibility(self):
+        if self._key_entry.cget("show") == "•":
+            self._key_entry.config(show="")
+            self._show_hide_btn.config(text=T("dölj"))
+        else:
+            self._key_entry.config(show="•")
+            self._show_hide_btn.config(text=T("visa"))
+
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=4)
         outer.pack(fill="x")
-        self._section_label(outer, "MIKROFON")
+        self._section_label(outer, T("MIKROFON"))
         card = self._card(outer)
 
-        tk.Label(card, text="Enhet", font=FONT_S, bg=BG2, fg=FG2).pack(anchor="w", pady=(0, 6))
+        tk.Label(card, text=T("Enhet"), font=FONT_S, bg=BG2, fg=FG2).pack(anchor="w", pady=(0, 6))
 
         combo_row = tk.Frame(card, bg=BG2)
         combo_row.pack(fill="x")
@@ -706,7 +1082,7 @@ class MeetingRecorder(tk.Tk):
         btn_row.pack(fill="x")
 
         self.rec_btn = RoundedButton(
-            btn_row, text="⬤  Starta inspelning",
+            btn_row, text=f"⬤  {T('Starta inspelning')}",
             style="solid", bg=ACCENT, fg="#FFFFFF",
             font_spec=("Helvetica Neue", 13, "bold"),
             padx=28, pady=13, radius=12,
@@ -715,7 +1091,7 @@ class MeetingRecorder(tk.Tk):
         self.rec_btn.pack(side="left", padx=(0, 10))
 
         self.notes_btn = RoundedButton(
-            btn_row, text="◆  Generera anteckningar",
+            btn_row, text=f"◆  {T('Generera anteckningar')}",
             style="ghost", fg=FG_DIM,
             font_spec=("Helvetica Neue", 13),
             padx=24, pady=13, radius=12,
@@ -725,7 +1101,7 @@ class MeetingRecorder(tk.Tk):
         self.notes_btn.pack(side="left", padx=(0, 10))
 
         self.save_btn = RoundedButton(
-            btn_row, text="↓  Spara",
+            btn_row, text=f"↓  {T('Spara')}",
             style="ghost", fg=FG_DIM,
             font_spec=("Helvetica Neue", 13),
             padx=24, pady=13, radius=12,
@@ -737,7 +1113,7 @@ class MeetingRecorder(tk.Tk):
         fmt_row = tk.Frame(outer, bg=BG)
         fmt_row.pack(fill="x", pady=(12, 0))
 
-        tk.Label(fmt_row, text="Exportformat", font=FONT_XS,
+        tk.Label(fmt_row, text=T("Exportformat"), font=FONT_XS,
                  bg=BG, fg=FG2).pack(side="left", padx=(2, 14))
 
         for val, lbl, desc in [
@@ -766,7 +1142,7 @@ class MeetingRecorder(tk.Tk):
 
         lbl_row = tk.Frame(inner, bg=BG)
         lbl_row.pack(fill="x", pady=(10, 5))
-        tk.Label(lbl_row, text="TRANSKRIBERAR",
+        tk.Label(lbl_row, text=T("TRANSKRIBERAR"),
                  font=FONT_SECTION, bg=BG, fg=ACCENT).pack(side="left")
         self._progress_label = tk.Label(lbl_row, text="",
                  font=FONT_XS, bg=BG, fg=FG2)
@@ -809,9 +1185,9 @@ class MeetingRecorder(tk.Tk):
         tab_bar = tk.Frame(self, bg=BG, padx=32)
         tab_bar.pack(fill="x")
         self.active_tab = tk.StringVar(value="transcript")
-        for label, key in [("Transkript", "transcript"),
-                            ("Mötesanteckningar", "notes"),
-                            ("Log", "log")]:
+        for label, key in [(T("Transkript"), "transcript"),
+                            (T("Mötesanteckningar"), "notes"),
+                            (T("Log"), "log")]:
             tk.Radiobutton(tab_bar, text=label, variable=self.active_tab, value=key,
                            font=FONT_B, bg=BG, fg=FG2, selectcolor=BG,
                            activebackground=BG, activeforeground=FG,
@@ -836,7 +1212,7 @@ class MeetingRecorder(tk.Tk):
 
     def _build_status(self):
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
-        self.status_var = tk.StringVar(value="Redo.")
+        self.status_var = tk.StringVar(value=T("Redo."))
         bar = tk.Frame(self, bg=BG2)
         bar.pack(fill="x")
         tk.Label(bar, textvariable=self.status_var, font=FONT_XS,
@@ -917,14 +1293,14 @@ class MeetingRecorder(tk.Tk):
 
     def _show_setup_dialog(self):
         self._open_name_dialog(
-            title="Välkommen till Meeting Recorder",
-            message="Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
+            title=T("Välkommen till Meeting Recorder"),
+            message=T("setup_message"),
             is_first_run=True,
         )
 
     def _show_help_dialog(self):
         dlg = tk.Toplevel(self)
-        dlg.title("Hjälp & FAQ")
+        dlg.title(T("Hjälp & FAQ"))
         dlg.configure(bg=BG2)
         dlg.resizable(False, False)
         dlg.grab_set()
@@ -1035,65 +1411,51 @@ class MeetingRecorder(tk.Tk):
             ins("spacer", "\n")
 
         # ── Content ───────────────────────────────────────────────────────────
-        ins("title",   "Hjälp & FAQ\n")
-        ins("powered", "Meeting Recorder  ·  Powered by Liljedahl Legal Tech\n")
+        ins("title",   T("help_title_line"))
+        ins("powered", T("help_powered_line"))
 
-        section("Kom igång")
-        para("Appen spelar in ditt möte via mikrofon, transkriberar det med "
-             "Whisper och genererar strukturerade mötesanteckningar med Claude AI.")
-        step(1, "Ange ditt namn eller företagsnamn i inställningarna (⚙).")
-        step(2, "Fyll i din Anthropic API-nyckel (se nedan hur du skaffar en).")
-        step(3, "Ange mötets titel och deltagare.")
-        step(4, "Klicka Starta inspelning när mötet börjar.")
-        step(5, "Klicka Avsluta möte när mötet är klart.")
-        step(6, "Klicka Generera anteckningar och välj sedan Spara.")
+        section(T("sec_kom_igang"))
+        para(T("kom_igang_para"))
+        step(1, T("step_1_igang"))
+        step(2, T("step_2_igang"))
+        step(3, T("step_3_igang"))
+        step(4, T("step_4_igang"))
+        step(5, T("step_5_igang"))
+        step(6, T("step_6_igang"))
 
-        section("Hur skaffar jag en API-nyckel?")
-        para("API-nyckeln låter appen kommunicera med Claude AI. "
-             "Du betalar per användning direkt till Anthropic — inte till Liljedahl Legal Tech.")
-        step(1, "Gå till console.anthropic.com och skapa ett konto.")
-        step(2, "Klicka på 'API Keys' i menyn till vänster.")
-        step(3, "Klicka 'Create Key', ge den ett namn (t.ex. 'Meeting Recorder').")
-        step(4, "Kopiera nyckeln — den börjar med 'sk-ant-'.")
-        step(5, "Klistra in den i API-nyckelfältet i appen. Den sparas automatiskt.")
-        tip("💡 Nyckeln sparas säkert i macOS Nyckelring och behöver bara anges en gång.")
+        section(T("sec_api_key"))
+        para(T("api_key_para"))
+        step(1, T("step_1_api"))
+        step(2, T("step_2_api"))
+        step(3, T("step_3_api"))
+        step(4, T("step_4_api"))
+        step(5, T("step_5_api"))
+        tip(T("tip_api"))
 
-        section("Vilken transkriptionsmodell ska jag välja?")
-        step("Small",    "Snabbast, bra för korta möten och tydligt tal.")
-        step("Medium",   "Rekommenderas för de flesta möten (standard).")
-        step("Large v3", "Bäst kvalitet, tar längre tid — lämplig för komplexa möten.")
+        section(T("sec_whisper"))
+        step("Small",    T("step_small_whisper"))
+        step("Medium",   T("step_medium_whisper"))
+        step("Large v3", T("step_large_whisper"))
 
-        section("Exportformat")
-        step(".md",   "Markdown — öppnas i Obsidian, Notion eller valfri textredigerare.")
-        step(".docx", "Word — öppnas direkt i Microsoft Word eller Pages.")
-        step(".pdf",  "PDF — lämplig för att skicka anteckningar till kunder eller kollegor.")
+        section(T("sec_export"))
+        step(".md",   T("step_md_export"))
+        step(".docx", T("step_docx_export"))
+        step(".pdf",  T("step_pdf_export"))
 
-        section("Vanliga frågor")
-        faq("Varför kan jag inte generera anteckningar direkt efter mötet?",
-            "När du avslutar mötet fortsätter appen transkribera kvarvarande ljud i "
-            "bakgrunden. En statusrad visar hur långt transkriptionen kommit. Knappen "
-            "'Generera anteckningar' aktiveras automatiskt när allt är klart — "
-            "vänta bara tills statusraden försvinner. Hur lång tid det tar beror på "
-            "mötets längd och vald Whisper-modell.")
+        section(T("sec_faq"))
+        faq(T("faq_q1"), T("faq_a1"))
         spacer()
-        faq("Varför tar transkriptionen tid?",
-            "Appen transkriberar i realtid medan mötet pågår och avslutar bearbetningen "
-            "direkt efter mötet. Ju längre möte och ju större modell, desto längre tid. "
-            "Large v3 ger bäst resultat men är långsammast.")
+        faq(T("faq_q2"), T("faq_a2"))
         spacer()
-        faq("Sparas mina inspelningar?",
-            "Nej. Ljud bearbetas lokalt och sparas aldrig permanent. Enbart "
-            "transkriptet och anteckningarna sparas när du exporterar.")
+        faq(T("faq_q3"), T("faq_a3"))
         spacer()
-        faq("Vad kostar det att använda Claude AI?",
-            "Anthropic tar betalt per antal tokens (ungefär ord). Ett vanligt möte "
-            "på 30 min kostar typiskt under 1 kr. Se aktuella priser på anthropic.com/pricing.")
+        faq(T("faq_q4"), T("faq_a4"))
         spacer()
 
         # ── Close button — lives OUTSIDE the Text widget ──────────────────────
         btn_bar = tk.Frame(dlg, bg=BG2, pady=14)
         btn_bar.pack(fill="x", side="bottom")
-        close = RoundedButton(btn_bar, text="Stäng", style="solid",
+        close = RoundedButton(btn_bar, text=T("Stäng"), style="solid",
                               bg=ACCENT, fg="#FFFFFF",
                               font_spec=("Helvetica Neue", 12),
                               padx=28, pady=9, radius=10,
@@ -1101,11 +1463,7 @@ class MeetingRecorder(tk.Tk):
         close.pack()
 
     def _show_settings_dialog(self):
-        self._open_name_dialog(
-            title="Inställningar",
-            message="Ändra namn eller företagsnamn:",
-            is_first_run=False,
-        )
+        self._open_settings_dialog()
 
     def _open_name_dialog(self, title: str, message: str, is_first_run: bool):
         dlg = tk.Toplevel(self)
@@ -1150,7 +1508,7 @@ class MeetingRecorder(tk.Tk):
             self._logo_name_lbl.config(text=self._display_name())
             dlg.destroy()
 
-        save_lbl = tk.Label(btn_row, text="Spara", font=FONT_B,
+        save_lbl = tk.Label(btn_row, text=T("Spara"), font=FONT_B,
                              bg=ACCENT, fg="#FFFFFF", padx=24, pady=8, cursor="hand2")
         save_lbl.pack(side="right")
         save_lbl.bind("<Button-1>", lambda _: save())
@@ -1158,7 +1516,7 @@ class MeetingRecorder(tk.Tk):
         save_lbl.bind("<Leave>",  lambda _: save_lbl.config(bg=ACCENT))
 
         if not is_first_run:
-            cancel_lbl = tk.Label(btn_row, text="Avbryt", font=FONT_B,
+            cancel_lbl = tk.Label(btn_row, text=T("Avbryt"), font=FONT_B,
                                    bg=BG3, fg=FG2, padx=24, pady=8, cursor="hand2")
             cancel_lbl.pack(side="right", padx=(0, 8))
             cancel_lbl.bind("<Button-1>", lambda _: dlg.destroy())
@@ -1167,6 +1525,96 @@ class MeetingRecorder(tk.Tk):
 
         entry.bind("<Return>", lambda _: save())
         dlg.protocol("WM_DELETE_WINDOW", save if is_first_run else dlg.destroy)
+        dlg.wait_window()
+
+    def _open_settings_dialog(self):
+        """Full settings dialog with name and UI language toggle."""
+        dlg = tk.Toplevel(self)
+        dlg.title(T("Inställningar"))
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        self.update_idletasks()
+        w, h = 460, 320
+        x = self.winfo_x() + (self.winfo_width()  - w) // 2
+        y = self.winfo_y() + (self.winfo_height() - h) // 2
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+
+        pad = tk.Frame(dlg, bg=BG, padx=36, pady=28)
+        pad.pack(fill="both", expand=True)
+
+        tk.Label(pad, text=T("Inställningar"), font=("Helvetica Neue", 13, "bold"),
+                 bg=BG, fg=FG).pack(anchor="w")
+        tk.Label(pad, text=T("Ändra namn eller företagsnamn:"), font=FONT_S, bg=BG, fg=FG2,
+                 wraplength=388, justify="left").pack(anchor="w", pady=(8, 14))
+
+        # Name entry
+        entry_var = tk.StringVar(value=self.user_name)
+        entry = tk.Entry(pad, textvariable=entry_var, font=FONT_M,
+                         bg=BG3, fg=FG, insertbackground=FG, relief="flat", bd=0,
+                         highlightthickness=1, highlightbackground=BORDER2,
+                         highlightcolor=ACCENT)
+        entry.pack(fill="x", ipady=9)
+        entry.focus_set()
+        entry.select_range(0, "end")
+
+        # Language toggle row
+        lang_frame = tk.Frame(pad, bg=BG)
+        lang_frame.pack(fill="x", pady=(18, 0))
+
+        tk.Label(lang_frame, text=T("language_row_label"), font=FONT_S, bg=BG, fg=FG2,
+                 width=20, anchor="w").pack(side="left")
+
+        ui_lang_var = tk.StringVar(value=_LANG)
+        for val, lbl in [("sv", "Svenska"), ("en", "English")]:
+            tk.Radiobutton(lang_frame, text=lbl, variable=ui_lang_var, value=val,
+                           font=FONT_S, bg=BG3, fg=FG, selectcolor=ACCENT,
+                           activebackground=BG4, activeforeground=FG,
+                           indicatoron=False, relief="solid", bd=1,
+                           padx=10, pady=3, cursor="hand2").pack(side="left", padx=(0, 6))
+
+        msg_lbl = tk.Label(pad, text="", font=FONT_XS, bg=BG, fg=FG_DIM)
+        msg_lbl.pack(anchor="w", pady=(10, 0))
+
+        btn_row = tk.Frame(pad, bg=BG)
+        btn_row.pack(fill="x", pady=(14, 0))
+
+        def save():
+            name = entry_var.get().strip()
+            if not name:
+                entry.config(highlightbackground=RED)
+                return
+            self.user_name = name
+            self._config["user_name"] = name
+
+            chosen_lang = ui_lang_var.get()
+            lang_changed = (chosen_lang != _LANG)
+            self._config["language"] = chosen_lang
+            save_config(self._config)
+            self._logo_name_lbl.config(text=self._display_name())
+            if lang_changed:
+                msg_lbl.config(text=T("lang_restart_msg"), fg=ACCENT)
+                dlg.after(1800, dlg.destroy)
+            else:
+                dlg.destroy()
+
+        save_lbl = tk.Label(btn_row, text=T("Spara"), font=FONT_B,
+                             bg=ACCENT, fg="#FFFFFF", padx=24, pady=8, cursor="hand2")
+        save_lbl.pack(side="right")
+        save_lbl.bind("<Button-1>", lambda _: save())
+        save_lbl.bind("<Enter>",  lambda _: save_lbl.config(bg=ACCENT2))
+        save_lbl.bind("<Leave>",  lambda _: save_lbl.config(bg=ACCENT))
+
+        cancel_lbl = tk.Label(btn_row, text=T("Avbryt"), font=FONT_B,
+                               bg=BG3, fg=FG2, padx=24, pady=8, cursor="hand2")
+        cancel_lbl.pack(side="right", padx=(0, 8))
+        cancel_lbl.bind("<Button-1>", lambda _: dlg.destroy())
+        cancel_lbl.bind("<Enter>", lambda _: cancel_lbl.config(bg=BG4, fg=FG))
+        cancel_lbl.bind("<Leave>", lambda _: cancel_lbl.config(bg=BG3, fg=FG2))
+
+        entry.bind("<Return>", lambda _: save())
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
         dlg.wait_window()
 
     # ── Device handling ───────────────────────────────────────────────────────
@@ -1247,7 +1695,7 @@ class MeetingRecorder(tk.Tk):
     def _start_recording(self):
         key = self.api_key.get().strip()
         if not key:
-            messagebox.showerror("API-nyckel saknas", "Fyll i Anthropic API-nyckel.")
+            messagebox.showerror(T("API-nyckel saknas"), T("Fyll i Anthropic API-nyckel."))
             return
         try:
             import anthropic as ac
@@ -1257,7 +1705,7 @@ class MeetingRecorder(tk.Tk):
             return
         self._save_key_to_keychain(key)
         if self.mic_device_idx.get() < 0:
-            messagebox.showerror("Ingen mikrofon", "Välj en mikrofonenhet.")
+            messagebox.showerror(T("Ingen mikrofon"), T("Välj en mikrofonenhet."))
             return
         if self.whisper_model is None or self._loaded_whisper_size != self.whisper_size.get():
             self._set_status(f"Laddar Whisper {self.whisper_size.get()}…")
@@ -1281,10 +1729,10 @@ class MeetingRecorder(tk.Tk):
             target=self._transcription_worker, daemon=True)
         self._transcription_worker_thread.start()
 
-        self.rec_btn.config(text="■  Avsluta möte", bg=RED, fg="#FFFFFF")
+        self.rec_btn.config(text=f"■  {T('Avsluta möte')}", bg=RED, fg="#FFFFFF")
         self.notes_btn.config(state="disabled", bg=BG, fg=FG_DIM)
         self.save_btn.config(state="disabled", bg=BG, fg=FG_DIM)
-        self._set_status("● Spelar in  —  Mikrofon")
+        self._set_status(f"● {T('Inspelning pågår')}  —  {T('MIKROFON')}")
         self._tick()
         self.rec_thread = threading.Thread(target=self._record_loop, daemon=True)
         self.rec_thread.start()
@@ -1295,9 +1743,9 @@ class MeetingRecorder(tk.Tk):
         if self.timer_id:
             self.after_cancel(self.timer_id)
             self.timer_id = None
-        self.rec_btn.config(text="●  Starta inspelning", bg=FG, fg=BG)
+        self.rec_btn.config(text=f"●  {T('Starta inspelning')}", bg=FG, fg=BG)
         self._set_rec_btn_enabled(False)
-        self._set_status("Mötet avslutat — transkriberar kvarvarande ljud…")
+        self._set_status(T("Transkriberar...") + " " + T("Inspelning pågår").lower() + "…")
         self._log("Ljud stoppat. Väntar på transkription…")
         # Snapshot total chunks in queue at this moment (remainder may add 1 more)
         self._total_to_transcribe = self.pending_transcriptions
@@ -1315,12 +1763,12 @@ class MeetingRecorder(tk.Tk):
 
     def _on_done(self):
         self._set_rec_btn_enabled(True)
-        self._set_status("Klart.  Klicka 'Generera anteckningar'.")
+        self._set_status(T("done_status"))
         if self.transcript_parts:
             self.notes_btn.config(state="normal", bg=BG, fg=ACCENT)
-        self._log("Transkription klar.")
+        self._log(T("transcription_done"))
         # Fill bar to 100% briefly, then hide
-        self._set_progress(1.0, "Transkription klar ✓")
+        self._set_progress(1.0, T("transcription_done"))
         self.after(1800, self._hide_progress_bar)
 
     # ── Audio capture ─────────────────────────────────────────────────────────
@@ -1372,8 +1820,9 @@ class MeetingRecorder(tk.Tk):
             total = self._total_to_transcribe
             done  = total - n
             frac  = done / total if total > 0 else 0.0
-            self._set_status(f"Transkriberar — {n} {'del' if n == 1 else 'delar'} kvar…")
-            self._set_progress(frac, f"{done} av {total} delar klara")
+            part_word = T("part_singular") if n == 1 else T("part_plural")
+            self._set_status(T("transcribing_parts_left").format(n=n, part_word=part_word))
+            self._set_progress(frac, T("parts_done_of").format(done=done, total=total))
 
     def _transcription_worker(self):
         while True:
@@ -1390,7 +1839,9 @@ class MeetingRecorder(tk.Tk):
     def _transcribe_chunk(self, chunk, idx):
         n_pending = self.pending_transcriptions
         self.after(0, lambda i=idx, p=n_pending: self._set_status(
-            f"Transkriberar del {i}  ({p} {'kvar' if p > 1 else 'återstår'})…"))
+            T("transcribing_chunk").format(
+                i=i, p=p,
+                remaining_word=T("remaining_more") if p > 1 else T("remaining_one"))))
         self._log(f"Transkriberar del {idx} ({len(chunk)/SAMPLE_RATE:.0f}s)…")
         fname = None
         try:
@@ -1493,37 +1944,56 @@ class MeetingRecorder(tk.Tk):
 
     def _generate_notes(self):
         if not self.transcript_parts:
-            messagebox.showinfo("Tomt", "Inget transkript.")
+            messagebox.showinfo("Tomt", T("Ingen inspelning att transkribera."))
             return
-        self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM, text="Genererar…")
-        self._set_status("Genererar mötesanteckningar med Claude…")
+        self.notes_btn.config(state="disabled", bg=BG3, fg=FG_DIM, text=T("generating_btn"))
+        self._set_status(T("generating_status"))
         self.active_tab.set("notes")
         self._switch_tab()
         threading.Thread(target=self._call_claude, daemon=True).start()
 
     def _call_claude(self):
         transcript   = "\n".join(self.transcript_parts)
-        title        = self.meeting_title.get().strip() or "Möte"
+        title        = self.meeting_title.get().strip() or T("default_meeting")
         participants = self.participants.get().strip()
         date_str     = (self.recording_start_time or datetime.now()).strftime("%Y-%m-%d %H:%M")
         org          = self.user_name or "organisationen"
+        lang_instr   = T("ai_lang_instruction")
 
-        system = (
-            f"Du är en expert på att skriva strukturerade och handlingsbara mötesanteckningar "
-            f"för {org}. Svara alltid på samma språk som transkriptet."
-        )
-        prompt = (
-            f"Analysera transkriptet och generera mötesanteckningar.\n\n"
-            f"Möte: {title}\nDatum: {date_str}\n"
-            f"{'Deltagare: ' + participants if participants else ''}\n\n"
-            f"TRANSKRIPT:\n{transcript}\n\n"
-            f"# {title}\n**Datum:** {date_str}\n"
-            f"{'**Deltagare:** ' + participants if participants else ''}\n\n"
-            f"## Sammanfattning\n## Beslut\n"
-            f"## Action Points\n| Åtgärd | Ansvarig | Deadline |\n|--------|----------|----------|\n\n"
-            f"## Nästa steg\n## Diskussion i sammandrag\n\n"
-            f"---\n*Genererat av {org} · Powered by Liljedahl Legal Tech*"
-        )
+        if _LANG == "en":
+            system = (
+                f"You are an expert at writing structured and actionable meeting notes "
+                f"for {org}. {lang_instr}"
+            )
+            prompt = (
+                f"Analyse the transcript and generate meeting notes.\n\n"
+                f"Meeting: {title}\nDate: {date_str}\n"
+                f"{'Participants: ' + participants if participants else ''}\n\n"
+                f"TRANSCRIPT:\n{transcript}\n\n"
+                f"# {title}\n**Date:** {date_str}\n"
+                f"{'**Participants:** ' + participants if participants else ''}\n\n"
+                f"## Summary\n## Decisions\n"
+                f"## Action Points\n| Action | Owner | Deadline |\n|--------|-------|----------|\n\n"
+                f"## Next steps\n## Discussion summary\n\n"
+                f"---\n*Generated by {org} · Powered by Liljedahl Legal Tech*"
+            )
+        else:
+            system = (
+                f"Du är en expert på att skriva strukturerade och handlingsbara mötesanteckningar "
+                f"för {org}. {lang_instr}"
+            )
+            prompt = (
+                f"Analysera transkriptet och generera mötesanteckningar.\n\n"
+                f"Möte: {title}\nDatum: {date_str}\n"
+                f"{'Deltagare: ' + participants if participants else ''}\n\n"
+                f"TRANSKRIPT:\n{transcript}\n\n"
+                f"# {title}\n**Datum:** {date_str}\n"
+                f"{'**Deltagare:** ' + participants if participants else ''}\n\n"
+                f"## Sammanfattning\n## Beslut\n"
+                f"## Action Points\n| Åtgärd | Ansvarig | Deadline |\n|--------|----------|----------|\n\n"
+                f"## Nästa steg\n## Diskussion i sammandrag\n\n"
+                f"---\n*Genererat av {org} · Powered by Liljedahl Legal Tech*"
+            )
         try:
             resp = self.anthropic_client.messages.create(
                 model="claude-sonnet-4-20250514", max_tokens=2000,
@@ -1531,18 +2001,18 @@ class MeetingRecorder(tk.Tk):
             notes = resp.content[0].text
             self.after(0, lambda n=notes: self._show_notes(n))
         except Exception as e:
-            self._log(f"Claude API-fel: {e}")
-            self.after(0, lambda: messagebox.showerror("API-fel", str(e)))
+            self._log(f"Claude API error: {e}")
+            self.after(0, lambda: messagebox.showerror("API error", str(e)))
             self.after(0, lambda: self.notes_btn.config(
-                state="normal", bg=BG, fg=ACCENT, text="◆  Generera anteckningar"))
+                state="normal", bg=BG, fg=ACCENT, text=f"◆  {T('Generera anteckningar')}"))
 
     def _show_notes(self, notes):
         self._clear(self.notes_box)
         self._append(self.notes_box, notes)
-        self.notes_btn.config(state="normal", bg=BG, fg=GREEN, text="✓  Klara")
+        self.notes_btn.config(state="normal", bg=BG, fg=GREEN, text=T("notes_done_btn"))
         self.save_btn.config(state="normal", bg=BG, fg=ACCENT)
-        self._set_status("Anteckningar klara.  Klicka 'Spara' för att exportera.")
-        self._log("Anteckningar genererade.")
+        self._set_status(T("notes_ready_status"))
+        self._log(T("notes_done_btn"))
 
     # ── Save ──────────────────────────────────────────────────────────────────
 
@@ -1559,13 +2029,13 @@ class MeetingRecorder(tk.Tk):
         }
         path = filedialog.asksaveasfilename(
             defaultextension=ext_map[fmt], initialfile=default,
-            filetypes=ft_map[fmt], title="Spara mötesanteckningar")
+            filetypes=ft_map[fmt], title=T("Spara mötesanteckningar"))
         if not path:
             return
 
         org = self.user_name or "Meeting Recorder"
         content_md = (
-            f"# {self.meeting_title.get() or 'Möte'}\n"
+            f"# {self.meeting_title.get() or T('default_meeting')}\n"
             f"*{datetime.now().strftime('%Y-%m-%d %H:%M')} · {org} · Powered by Liljedahl Legal Tech*\n\n---\n\n"
             f"{self.notes_box.get('1.0', 'end').strip()}\n\n---\n\n## Fullständigt transkript\n\n"
             + "\n".join(self.transcript_parts) + "\n"
@@ -1578,10 +2048,10 @@ class MeetingRecorder(tk.Tk):
                 self._save_as_docx(path, content_md)
             elif fmt == "pdf":
                 self._save_as_pdf(path, content_md)
-            self._set_status(f"Sparat: {path}")
-            self._log(f"Fil sparad: {path}")
+            self._set_status(T("save_done_status").format(path=path))
+            self._log(T("save_done_status").format(path=path))
         except Exception as e:
-            messagebox.showerror("Sparfel", str(e))
+            messagebox.showerror(T("Sparfel"), str(e))
 
     def _save_as_docx(self, path, md_text):
         from docx import Document
@@ -1890,7 +2360,7 @@ def _notify_admin(reg_data: dict):
 def _show_registration_window() -> bool:
     """Show registration form for new users. Returns True if registered."""
     root = tk.Tk()
-    root.title("Meeting Recorder LLT — Registrering")
+    root.title(T("reg_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
 
@@ -1913,7 +2383,7 @@ def _show_registration_window() -> bool:
              ).pack(pady=(0, 16))
     tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=4)
 
-    tk.Label(inner, text="Registrera dig för att aktivera din licens:",
+    tk.Label(inner, text=T("Registrera dig för att aktivera din licens:"),
              font=FONT_S, bg=BG2, fg=FG2
              ).pack(anchor="w", pady=(12, 10))
 
@@ -1923,11 +2393,11 @@ def _show_registration_window() -> bool:
     form.pack(fill="x")
 
     field_defs = [
-        ("name",    "Namn *",                      True),
-        ("company", "Företagsnamn",                 False),
-        ("address", "Adress *",                     True),
-        ("org_nr",  "Organisationsnummer",          False),
-        ("email",   "E-postadress *",               True),
+        ("name",    T("Namn *"),                   True),
+        ("company", T("Företagsnamn"),              False),
+        ("address", T("Adress *"),                  True),
+        ("org_nr",  T("Organisationsnummer"),       False),
+        ("email",   T("E-postadress *"),            True),
     ]
 
     for key, label, required in field_defs:
@@ -1952,16 +2422,16 @@ def _show_registration_window() -> bool:
 
         # Validate required fields
         if not name:
-            msg_label.config(text="Fyll i ditt namn.", fg=RED)
+            msg_label.config(text=T("reg_fill_name"), fg=RED)
             return
         if not address:
-            msg_label.config(text="Fyll i din adress.", fg=RED)
+            msg_label.config(text=T("reg_fill_address"), fg=RED)
             return
         if not email or "@" not in email:
-            msg_label.config(text="Ange en giltig e-postadress.", fg=RED)
+            msg_label.config(text=T("reg_fill_email"), fg=RED)
             return
 
-        msg_label.config(text="Registrerar...", fg=FG_DIM)
+        msg_label.config(text=T("Registrerar..."), fg=FG_DIM)
         root.update()
 
         # Generate 12-month license key
@@ -1970,7 +2440,7 @@ def _show_registration_window() -> bool:
         # Activate the license
         ok, activate_msg = _activate_license(license_key)
         if not ok:
-            msg_label.config(text="Kunde inte skapa licens: " + activate_msg, fg=RED)
+            msg_label.config(text=T("reg_cannot_create") + activate_msg, fg=RED)
             return
 
         # Save registration data locally
@@ -1990,7 +2460,7 @@ def _show_registration_window() -> bool:
         threading.Thread(target=_notify_admin, args=(reg_data,), daemon=True).start()
 
         msg_label.config(
-            text=f"✅ Välkommen, {name}! Din licens är aktiverad.",
+            text="✅ " + T("reg_welcome").format(name=name),
             fg=GREEN,
         )
         registered[0] = True
@@ -2000,12 +2470,12 @@ def _show_registration_window() -> bool:
     btn_frame.pack(fill="x", pady=(4, 0))
 
     RoundedButton(
-        btn_frame, text="Registrera & starta", style="primary",
+        btn_frame, text=T("Registrera & starta"), style="primary",
         padx=24, pady=10, command=do_register,
     ).pack(side="left")
 
     RoundedButton(
-        btn_frame, text="Jag har redan en nyckel", style="ghost",
+        btn_frame, text=T("Jag har redan en nyckel"), style="ghost",
         padx=20, pady=10,
         command=lambda: [setattr(root, '_go_activate', True), root.destroy()],
     ).pack(side="right")
@@ -2021,7 +2491,7 @@ def _show_registration_window() -> bool:
 def _show_activation_window() -> bool:
     """Show a license activation window. Returns True if activated."""
     root = tk.Tk()
-    root.title("Meeting Recorder LLT — Aktivering")
+    root.title(T("act_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
 
@@ -2044,7 +2514,7 @@ def _show_activation_window() -> bool:
 
     tk.Frame(inner, bg=BORDER, height=1).pack(fill="x", pady=8)
 
-    tk.Label(inner, text="Ange din licensnyckel för att aktivera appen:",
+    tk.Label(inner, text=T("Ange din licensnyckel för att aktivera appen:"),
              font=FONT_S, bg=BG2, fg=FG2
              ).pack(anchor="w", pady=(16, 6))
 
@@ -2062,7 +2532,7 @@ def _show_activation_window() -> bool:
     def do_activate():
         key_text = key_entry.get("1.0", "end").strip()
         if not key_text:
-            msg_label.config(text="Klistra in din licensnyckel ovan.", fg=ACCENT)
+            msg_label.config(text=T("Klistra in din licensnyckel ovan."), fg=ACCENT)
             return
         ok, msg = _activate_license(key_text)
         if ok:
@@ -2076,12 +2546,12 @@ def _show_activation_window() -> bool:
     btn_frame.pack(fill="x")
 
     RoundedButton(
-        btn_frame, text="Aktivera", style="primary",
+        btn_frame, text=T("Aktivera"), style="primary",
         padx=28, pady=10, command=do_activate,
     ).pack(side="left")
 
     RoundedButton(
-        btn_frame, text="Avsluta", style="ghost",
+        btn_frame, text=T("Avsluta"), style="ghost",
         padx=28, pady=10, command=root.destroy,
     ).pack(side="right")
 
@@ -2092,7 +2562,7 @@ def _show_activation_window() -> bool:
 def _show_expired_window(message: str) -> bool:
     """Show license expired window with option to re-enter key."""
     root = tk.Tk()
-    root.title("Meeting Recorder LLT — Licens")
+    root.title(T("exp_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
 
@@ -2114,7 +2584,7 @@ def _show_expired_window(message: str) -> bool:
              font=FONT_S, bg=BG2, fg=RED, wraplength=380, justify="center"
              ).pack(pady=(0, 8))
 
-    tk.Label(inner, text="Kontakta Liljedahl Legal Tech för att förnya din licens:\nsvante@liljedahladvisory.se",
+    tk.Label(inner, text=T("Kontakta Liljedahl Legal Tech för förnyelse:"),
              font=("Helvetica Neue", 10), bg=BG2, fg=FG_DIM, justify="center"
              ).pack(pady=(8, 20))
 
@@ -2126,12 +2596,12 @@ def _show_expired_window(message: str) -> bool:
         root.destroy()
 
     RoundedButton(
-        btn_frame, text="Ange ny licensnyckel", style="primary",
+        btn_frame, text=T("Ange ny licensnyckel"), style="primary",
         padx=24, pady=10, command=do_reactivate,
     ).pack(side="left")
 
     RoundedButton(
-        btn_frame, text="Avsluta", style="ghost",
+        btn_frame, text=T("Avsluta"), style="ghost",
         padx=24, pady=10, command=root.destroy,
     ).pack(side="right")
 
@@ -2139,10 +2609,68 @@ def _show_expired_window(message: str) -> bool:
     return reactivate[0]
 
 
+def _show_language_selection_window():
+    """Show a one-time language selection dialog. Returns the chosen language code."""
+    root = tk.Tk()
+    root.title(T("lang_dialog_title"))
+    root.configure(bg=BG2)
+    root.resizable(False, False)
+
+    w, h = 380, 220
+    sx = root.winfo_screenwidth()
+    sy = root.winfo_screenheight()
+    root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+
+    chosen = [_LANG]
+
+    inner = tk.Frame(root, bg=BG2, padx=40, pady=30)
+    inner.pack(fill="both", expand=True)
+
+    tk.Label(inner, text="Meeting Recorder LLT",
+             font=("Helvetica Neue", 16, "bold"), bg=BG2, fg=FG
+             ).pack(pady=(0, 4))
+
+    tk.Label(inner, text=T("lang_dialog_prompt"),
+             font=("Helvetica Neue", 12), bg=BG2, fg=FG2
+             ).pack(pady=(0, 20))
+
+    btn_row = tk.Frame(inner, bg=BG2)
+    btn_row.pack()
+
+    def pick(lang):
+        chosen[0] = lang
+        set_lang(lang)
+        root.destroy()
+
+    RoundedButton(
+        btn_row, text=T("lang_btn_sv"), style="solid", bg=ACCENT,
+        padx=20, pady=10, command=lambda: pick("sv"),
+    ).pack(side="left", padx=(0, 12))
+
+    RoundedButton(
+        btn_row, text=T("lang_btn_en"), style="ghost", fg=FG,
+        padx=20, pady=10, command=lambda: pick("en"),
+    ).pack(side="left")
+
+    root.mainloop()
+    return chosen[0]
+
+
 def _main():
     import multiprocessing
     multiprocessing.freeze_support()
     multiprocessing.set_start_method("spawn", force=True)
+
+    # ── Load language preference early ───────────────────────────────
+    is_first_run = not os.path.isfile(CONFIG_PATH)
+    cfg = load_config()
+    set_lang(cfg.get("language", "sv"))
+
+    # ── First-run language selection ─────────────────────────────────
+    if is_first_run:
+        chosen_lang = _show_language_selection_window()
+        cfg["language"] = chosen_lang
+        save_config(cfg)
 
     # ── License check ────────────────────────────────────────────────────
     valid, msg, payload = _check_license_file()
@@ -2170,9 +2698,7 @@ def _main():
     if valid and payload:
         user_email = payload.get("email", "")
         if user_email and _check_revocation(user_email):
-            _show_expired_window(
-                "Din licens har spärrats. Kontakta Liljedahl Legal Tech."
-            )
+            _show_expired_window(T("revoked_msg"))
             return
     # ─────────────────────────────────────────────────────────────────────
 
