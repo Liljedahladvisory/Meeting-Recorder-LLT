@@ -98,17 +98,28 @@ def _get_machine_id() -> str:
                     uuid = line.split('"')[-2]
                     return hashlib.sha256(uuid.encode()).hexdigest()[:32]
         elif sys.platform == "win32":
-            out = subprocess.check_output(
-                ["wmic", "csproduct", "get", "uuid"],
-                text=True, timeout=5,
-            )
-            for line in out.splitlines():
-                line = line.strip()
-                if line and line != "UUID" and line != "":
-                    return hashlib.sha256(line.encode()).hexdigest()[:32]
+            # Method 1: Windows Registry MachineGuid (stable, no subprocess)
+            try:
+                import winreg
+                reg = winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\Microsoft\Cryptography"
+                )
+                machine_guid = winreg.QueryValueEx(reg, "MachineGuid")[0]
+                winreg.CloseKey(reg)
+                if machine_guid:
+                    return hashlib.sha256(machine_guid.encode()).hexdigest()[:32]
+            except Exception:
+                pass
+            # Method 2: MAC address fallback (Python stdlib, always works)
+            import uuid as _uuid
+            mac = _uuid.getnode()
+            return hashlib.sha256(str(mac).encode()).hexdigest()[:32]
     except Exception:
         pass
-    return hashlib.sha256(b"unknown-machine").hexdigest()[:32]
+    # Last resort: MAC address (cross-platform)
+    import uuid as _uuid
+    return hashlib.sha256(str(_uuid.getnode()).encode()).hexdigest()[:32]
 
 def _verify_license(key_str: str) -> dict | None:
     """Verify a license key (HMAC-SHA256). Returns payload dict or None."""
