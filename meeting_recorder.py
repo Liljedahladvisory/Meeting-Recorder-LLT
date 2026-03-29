@@ -1801,7 +1801,7 @@ class MeetingRecorder(tk.Tk):
 
 # ── Webhook URL for admin notifications ──────────────────────────────────────
 # Replace with your Google Apps Script web app URL after setup
-_ADMIN_WEBHOOK_URL = ""  # e.g. "https://script.google.com/macros/s/.../exec"
+_ADMIN_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxFxWDU5khMonP3qsTtl2nG5BrFP-wWuit8kAHqQ-c2X8lJbyFr7ytuj6LtRfw0s2-f/exec"
 _ADMIN_EMAIL = "svante@liljedahladvisory.se"
 
 # ── Revocation list URL (hosted on GitHub) ───────────────────────────────────
