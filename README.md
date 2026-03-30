@@ -1,7 +1,7 @@
 # Meeting Recorder
 **Liljedahl Advisory AB**
 
-Spelar in möten, transkriberar i realtid och genererar strukturerade mötesanteckningar med Claude AI. Fungerar för både fysiska möten (mikrofon) och digitala möten via Teams eller Google Meet (BlackHole).
+Spelar in möten, transkriberar i realtid och genererar strukturerade mötesanteckningar med Claude AI. Primärt avsedd att användas vid fysiska möten, men fungerar utmärkt vid digitala möten. Inspelning sker genom mikrofon (inbyggd eller extern).
 
 ---
 
@@ -10,7 +10,7 @@ Spelar in möten, transkriberar i realtid och genererar strukturerade mötesante
 - **Realtidstranskription** via [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — transkriberar i bakgrunden medan mötet pågår
 - **Talarseparation** via [pyannote.audio](https://github.com/pyannote/pyannote-audio) — märker upp vem som säger vad
 - **Mötesanteckningar** genereras automatiskt av Claude (sammanfattning, beslut, action points)
-- **Flera ljudkällor** — mikrofon, BlackHole/systemljud, eller en mix av båda
+- **Ljudkälla** — mikrofon
 - **Exportera** transkript + anteckningar till Markdown
 
 ---
@@ -21,10 +21,7 @@ Spelar in möten, transkriberar i realtid och genererar strukturerade mötesante
 pip install faster-whisper pyannote.audio sounddevice numpy anthropic
 ```
 
-För digitala möten (Teams/Google Meet):
-```
-brew install blackhole-2ch
-```
+
 
 ### API-nycklar
 
@@ -48,7 +45,7 @@ python meeting_recorder.py
 ```
 
 1. Fyll i **mötetitel** och **deltagare** (kommaseparerade)
-2. Välj **ljudkälla** — Mikrofon, Teams/Meet eller Båda
+2. Välj **ljudkälla** — Mikrofon, iPhone-mikrofon etc
 3. Välj **Whisper-modell** — Small (snabb) / Medium (balanserad) / Large v3 (bäst kvalitet)
 4. Klicka **Starta inspelning**
 5. Klicka **Avsluta möte** när mötet är slut — transkription av kvarvarande ljud fortsätter i bakgrunden
