@@ -20,9 +20,10 @@ try:
 except ImportError:
     _KEYRING_AVAILABLE = False
 
-_KEYRING_SERVICE  = "MeetingRecorder-LLT"
-_KEYRING_USERNAME = "anthropic_api_key"
-CONFIG_PATH       = os.path.expanduser("~/.meeting_recorder_llt.json")
+_KEYRING_SERVICE    = "MeetingRecorder-LLT"
+_KEYRING_USERNAME   = "anthropic_api_key"
+_KEYRING_HF_TOKEN   = "hf_token"
+CONFIG_PATH         = os.path.expanduser("~/.meeting_recorder_llt.json")
 
 SAMPLE_RATE   = 16000
 CHANNELS      = 1
@@ -230,6 +231,7 @@ class MeetingRecorder(tk.Tk):
         self.user_name = self._config.get("user_name", "")
 
         self.api_key        = tk.StringVar()
+        self.hf_token       = tk.StringVar()
         self.meeting_title  = tk.StringVar()
         self.participants   = tk.StringVar()
         self.language       = tk.StringVar(value="sv")
@@ -350,6 +352,15 @@ class MeetingRecorder(tk.Tk):
                   padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
                   command=lambda: self._key_entry.config(
                       show="" if self._key_entry.cget("show") == "•" else "•")
+                  ).pack(side="left", padx=(6, 0))
+
+        self._hf_entry, r2 = field(card, "HF-token (talarsep.)", self.hf_token,
+                                   show="•", hint="Valfritt — för talarseparation")
+        tk.Button(r2, text="visa", font=FONT_XS,
+                  bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
+                  padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
+                  command=lambda: self._hf_entry.config(
+                      show="" if self._hf_entry.cget("show") == "•" else "•")
                   ).pack(side="left", padx=(6, 0))
 
         field(card, "Möte / titel", self.meeting_title)
@@ -618,22 +629,36 @@ class MeetingRecorder(tk.Tk):
     # ── Key management ────────────────────────────────────────────────────────
 
     def _load_saved_key(self):
-        """Load API key from keychain only — never from environment variables."""
+        """Load API key and HF token from keychain."""
         if _KEYRING_AVAILABLE:
             try:
                 saved = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
                 if saved:
                     self.api_key.set(saved)
                     self._log("API-nyckel laddad från Keychain.")
-                    return
             except Exception:
                 pass
-        self._log("Ingen sparad API-nyckel hittades.")
+            try:
+                hf = keyring.get_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN)
+                if hf:
+                    self.hf_token.set(hf)
+                    self._log("HF-token laddad från Keychain.")
+            except Exception:
+                pass
+        else:
+            self._log("Ingen sparad API-nyckel hittades.")
 
     def _save_key_to_keychain(self, key: str):
         if _KEYRING_AVAILABLE:
             try:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
+            except Exception:
+                pass
+
+    def _save_hf_token_to_keychain(self, token: str):
+        if _KEYRING_AVAILABLE:
+            try:
+                keyring.set_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN, token)
             except Exception:
                 pass
 
@@ -926,13 +951,13 @@ class MeetingRecorder(tk.Tk):
             self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
             self._loaded_whisper_size = size
             self._log("Whisper redo. Laddar talarseparation…")
-            hf_token = os.environ.get("HF_TOKEN", "")
+            hf_token = self.hf_token.get().strip() or os.environ.get("HF_TOKEN", "")
             if hf_token:
                 self.diarization_pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1", token=hf_token)
                 self._log("Talarseparation redo.")
             else:
-                self._log("HF_TOKEN saknas — talarseparation inaktiverad.")
+                self._log("HF-token saknas — talarseparation inaktiverad.")
             self.after(0, lambda: self._set_status(
                 f"Redo  —  Whisper {size}" +
                 (" + talarseparation" if self.diarization_pipeline else "") + " laddat."))
@@ -980,6 +1005,9 @@ class MeetingRecorder(tk.Tk):
             messagebox.showerror("Fel", str(e))
             return
         self._save_key_to_keychain(key)
+        hf = self.hf_token.get().strip()
+        if hf:
+            self._save_hf_token_to_keychain(hf)
         if self.mic_device_idx.get() < 0:
             messagebox.showerror("Ingen mikrofon", "Välj en mikrofonenhet.")
             return
