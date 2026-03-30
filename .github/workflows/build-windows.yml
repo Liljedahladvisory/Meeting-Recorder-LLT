@@ -47,13 +47,14 @@ jobs:
             --name "Meeting Recorder LLT" `
             --icon MeetingRecorder.ico `
             --add-data "MeetingRecorder.ico;." `
+            --add-data "meeting_recorder.py;." `
             --add-data "revoked.json;." `
             --hidden-import "pyannote.audio" `
             --hidden-import "sounddevice" `
             --collect-all "faster_whisper" `
             --collect-all "pyannote" `
             --noconfirm `
-            meeting_recorder.py
+            main_windows.py
 
       - name: Install Inno Setup
         run: |
