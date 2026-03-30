@@ -11,7 +11,7 @@ Spelar in möten, transkriberar i realtid och genererar strukturerade mötesante
 - **Talarseparation** via [pyannote.audio](https://github.com/pyannote/pyannote-audio) — märker upp vem som säger vad
 - **Mötesanteckningar** genereras automatiskt av Claude (sammanfattning, beslut, action points)
 - **Ljudkälla** — mikrofon
-- **Exportera** transkript + anteckningar till Markdown
+- **Exportera** transkript + anteckningar till Markdown, Word eller PDF.
 
 ---
 
