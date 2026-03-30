@@ -63,8 +63,9 @@ try:
 except ImportError:
     _KEYRING_AVAILABLE = False
 
-_KEYRING_SERVICE  = "MeetingRecorder-LLT"
-_KEYRING_USERNAME = "anthropic_api_key"
+_KEYRING_SERVICE    = "MeetingRecorder-LLT"
+_KEYRING_USERNAME   = "anthropic_api_key"
+_KEYRING_HF_TOKEN   = "hf_token"
 # ── Platform-specific paths ───────────────────────────────────────────────────
 if sys.platform == "win32":
     _APP_DATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MeetingRecorderLLT")
@@ -73,6 +74,8 @@ else:
 
 CONFIG_PATH  = os.path.join(_APP_DATA, "config.json")
 LICENSE_PATH = os.path.join(_APP_DATA, "license.json")
+
+APP_VERSION = "1.0.0"
 
 SAMPLE_RATE   = 16000
 CHANNELS      = 1
@@ -295,6 +298,8 @@ _STRINGS = {
         "Välj mapp": "Välj mapp",
         "Format": "Format",
         "Anthropic API-nyckel": "Anthropic API-nyckel",
+        "HF-token (talarseparation)": "HF-token (talarseparation)",
+        "hf_token_hint": "Valfritt — krävs för att identifiera vem som talar",
         "Välkommen till Meeting Recorder": "Välkommen till Meeting Recorder",
         "setup_message": "Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
         # Registration form
@@ -414,6 +419,12 @@ _STRINGS = {
         "transcribing_chunk": "Transkriberar del {i}  ({p} {remaining_word})…",
         "remaining_more": "kvar",
         "remaining_one": "återstår",
+        # Auto-update
+        "update_available": "🔔 Version {version} tillgänglig",
+        "update_btn": "Uppdatera",
+        "downloading": "Laddar ner...",
+        "update_ready": "✅ Starta om appen för att tillämpa",
+        "update_failed": "❌ Uppdatering misslyckades",
     },
     "en": {
         # Config section
@@ -466,6 +477,8 @@ _STRINGS = {
         "Välj mapp": "Choose folder",
         "Format": "Format",
         "Anthropic API-nyckel": "Anthropic API key",
+        "HF-token (talarseparation)": "HF token (speaker ID)",
+        "hf_token_hint": "Optional — required to identify who is speaking",
         "Välkommen till Meeting Recorder": "Welcome to Meeting Recorder",
         "setup_message": "Enter your name or company name.\nIt is used in meeting notes and exported files.",
         # Registration form
@@ -585,6 +598,12 @@ _STRINGS = {
         "transcribing_chunk": "Transcribing part {i}  ({p} {remaining_word})…",
         "remaining_more": "remaining",
         "remaining_one": "left",
+        # Auto-update
+        "update_available": "🔔 Version {version} available",
+        "update_btn": "Update",
+        "downloading": "Downloading...",
+        "update_ready": "✅ Restart app to apply",
+        "update_failed": "❌ Update failed",
     },
 }
 
@@ -623,6 +642,79 @@ def save_config(cfg: dict):
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
+
+
+def _check_for_updates() -> dict | None:
+    """Check GitHub Releases API for a newer version. Rate-limited to once per 24 h."""
+    import urllib.request
+    from datetime import timedelta
+
+    cfg = load_config()
+    last_check = cfg.get("last_update_check", "")
+    if last_check:
+        try:
+            if datetime.now() - datetime.fromisoformat(last_check) < timedelta(hours=24):
+                return None
+        except Exception:
+            pass
+
+    try:
+        url = "https://api.github.com/repos/Liljedahladvisory/Meeting-Recorder-LLT/releases/latest"
+        req = urllib.request.Request(
+            url, headers={"User-Agent": f"MeetingRecorderLLT/{APP_VERSION}"}
+        )
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read())
+
+        # Save last check time
+        cfg["last_update_check"] = datetime.now().isoformat()
+        save_config(cfg)
+
+        latest_tag = data.get("tag_name", "").lstrip("v")
+        if not latest_tag:
+            return None
+
+        # Compare semantic versions
+        def ver(s):
+            return [int(x) for x in s.split(".")]
+
+        if ver(latest_tag) <= ver(APP_VERSION):
+            return None
+
+        # Look for meeting_recorder.py asset (Python-only update)
+        script_url = None
+        for asset in data.get("assets", []):
+            if asset["name"] == "meeting_recorder.py":
+                script_url = asset["browser_download_url"]
+                break
+
+        return {
+            "version": latest_tag,
+            "script_url": script_url,        # None = full reinstall needed
+            "notes": data.get("body", "")[:200],
+            "html_url": data.get("html_url", ""),
+        }
+    except Exception:
+        return None
+
+
+def _apply_python_update(script_url: str) -> bool:
+    """Download new meeting_recorder.py and save to ~/.meeting-recorder-llt/meeting_recorder.py."""
+    import urllib.request, shutil, tempfile
+    try:
+        UPDATE_PATH = os.path.join(
+            os.path.expanduser("~"), ".meeting-recorder-llt", "meeting_recorder.py"
+        )
+        with urllib.request.urlopen(script_url, timeout=30) as resp:
+            data = resp.read()
+        # Write to temp first, then move (atomic)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        shutil.move(tmp_path, UPDATE_PATH)
+        return True
+    except Exception:
+        return False
 
 
 class RoundedButton(tk.Canvas):
@@ -778,6 +870,7 @@ class MeetingRecorder(tk.Tk):
         self.user_name = self._config.get("user_name", "")
 
         self.api_key        = tk.StringVar()
+        self.hf_token       = tk.StringVar()
         self.meeting_title  = tk.StringVar()
         self.participants   = tk.StringVar()
         self.language       = tk.StringVar(value="sv")
@@ -846,6 +939,52 @@ class MeetingRecorder(tk.Tk):
             help_menu = tk.Menu(menubar, tearoff=0)
             menubar.add_cascade(label=T("menu_help"), menu=help_menu)
             help_menu.add_command(label=T("menu_help_faq"), command=self._show_help_dialog)
+
+    def _show_update_banner(self, update_info: dict):
+        """Show a dismissible update notification banner at the top of the window."""
+        import webbrowser
+
+        banner = tk.Frame(self, bg=BG3, pady=6)
+        # Insert at top — before the header frame
+        banner.pack(fill="x", side="top", before=self._header_frame)
+
+        inner = tk.Frame(banner, bg=BG3)
+        inner.pack()
+
+        version = update_info["version"]
+        msg = T("update_available").format(version=version)
+        lbl = tk.Label(inner, text="", font=FONT_S, bg=BG3, fg=FG2)
+
+        tk.Label(inner, text=msg, font=FONT_S, bg=BG3, fg=FG).pack(side="left", padx=(0, 12))
+
+        def do_update():
+            if update_info.get("script_url"):
+                btn.config(state="disabled")
+                lbl.config(text=T("downloading"))
+
+                def _dl():
+                    ok = _apply_python_update(update_info["script_url"])
+                    self.after(0, lambda: lbl.config(
+                        text=T("update_ready") if ok else T("update_failed"),
+                        fg=GREEN if ok else RED,
+                    ))
+
+                threading.Thread(target=_dl, daemon=True).start()
+            else:
+                webbrowser.open(
+                    update_info.get("html_url",
+                                    "https://github.com/Liljedahladvisory/Meeting-Recorder-LLT/releases/latest")
+                )
+
+        btn = RoundedButton(inner, text=T("update_btn"), style="primary",
+                            padx=14, pady=4, command=do_update)
+        btn.pack(side="left", padx=4)
+
+        lbl.pack(side="left", padx=8)
+
+        tk.Button(inner, text="✕", font=FONT_S, bg=BG3, fg=FG_DIM,
+                  bd=0, relief="flat", cursor="hand2",
+                  command=banner.destroy).pack(side="left", padx=4)
 
     def _show_about_dialog(self):
         dlg = tk.Toplevel(self)
@@ -922,6 +1061,7 @@ class MeetingRecorder(tk.Tk):
     def _build_header(self):
         hdr = tk.Frame(self, bg=BG, padx=32, pady=20)
         hdr.pack(fill="x")
+        self._header_frame = hdr
 
         left = tk.Frame(hdr, bg=BG)
         left.pack(side="left", fill="y")
@@ -996,6 +1136,16 @@ class MeetingRecorder(tk.Tk):
         )
         self._show_hide_btn.pack(side="left", padx=(6, 0))
 
+        self._hf_entry, r2 = field(card, T("HF-token (talarseparation)"), self.hf_token,
+                                   show="•", hint=T("hf_token_hint"))
+        self._show_hf_btn = tk.Button(
+            r2, text=T("visa"), font=FONT_XS,
+            bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
+            padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
+            command=self._toggle_hf_visibility,
+        )
+        self._show_hf_btn.pack(side="left", padx=(6, 0))
+
         field(card, T("Möte / titel"), self.meeting_title)
         field(card, T("Deltagare"), self.participants,
               hint=T("namn, roll — kommaseparerade"))
@@ -1037,6 +1187,14 @@ class MeetingRecorder(tk.Tk):
         else:
             self._key_entry.config(show="•")
             self._show_hide_btn.config(text=T("visa"))
+
+    def _toggle_hf_visibility(self):
+        if self._hf_entry.cget("show") == "•":
+            self._hf_entry.config(show="")
+            self._show_hf_btn.config(text=T("dölj"))
+        else:
+            self._hf_entry.config(show="•")
+            self._show_hf_btn.config(text=T("visa"))
 
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=4)
@@ -1270,22 +1428,36 @@ class MeetingRecorder(tk.Tk):
     # ── Key management ────────────────────────────────────────────────────────
 
     def _load_saved_key(self):
-        """Load API key from keychain only — never from environment variables."""
+        """Load API key and HF token from keychain."""
         if _KEYRING_AVAILABLE:
             try:
                 saved = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
                 if saved:
                     self.api_key.set(saved)
                     self._log("API-nyckel laddad från Keychain.")
-                    return
             except Exception:
                 pass
-        self._log("Ingen sparad API-nyckel hittades.")
+            try:
+                hf = keyring.get_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN)
+                if hf:
+                    self.hf_token.set(hf)
+                    self._log("HF-token laddad från Keychain.")
+            except Exception:
+                pass
+        else:
+            self._log("Ingen sparad API-nyckel hittades.")
 
     def _save_key_to_keychain(self, key: str):
         if _KEYRING_AVAILABLE:
             try:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
+            except Exception:
+                pass
+
+    def _save_hf_token_to_keychain(self, token: str):
+        if _KEYRING_AVAILABLE:
+            try:
+                keyring.set_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN, token)
             except Exception:
                 pass
 
@@ -1650,13 +1822,13 @@ class MeetingRecorder(tk.Tk):
             self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
             self._loaded_whisper_size = size
             self._log("Whisper redo. Laddar talarseparation…")
-            hf_token = os.environ.get("HF_TOKEN", "")
+            hf_token = self.hf_token.get().strip() or os.environ.get("HF_TOKEN", "")
             if hf_token:
                 self.diarization_pipeline = Pipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1", token=hf_token)
                 self._log("Talarseparation redo.")
             else:
-                self._log("HF_TOKEN saknas — talarseparation inaktiverad.")
+                self._log("HF-token saknas — talarseparation inaktiverad.")
             self.after(0, lambda: self._set_status(
                 f"Redo  —  Whisper {size}" +
                 (" + talarseparation" if self.diarization_pipeline else "") + " laddat."))
@@ -1704,6 +1876,9 @@ class MeetingRecorder(tk.Tk):
             messagebox.showerror("Fel", str(e))
             return
         self._save_key_to_keychain(key)
+        hf = self.hf_token.get().strip()
+        if hf:
+            self._save_hf_token_to_keychain(hf)
         if self.mic_device_idx.get() < 0:
             messagebox.showerror(T("Ingen mikrofon"), T("Välj en mikrofonenhet."))
             return
@@ -2703,6 +2878,15 @@ def _main():
     # ─────────────────────────────────────────────────────────────────────
 
     app = MeetingRecorder()
+
+    # Check for updates in background (non-blocking)
+    def _bg_update_check():
+        result = _check_for_updates()
+        if result:
+            app.after(0, lambda: app._show_update_banner(result))
+
+    threading.Thread(target=_bg_update_check, daemon=True).start()
+
     app.mainloop()
 
 
