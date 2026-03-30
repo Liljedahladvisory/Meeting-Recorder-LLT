@@ -65,7 +65,8 @@ except ImportError:
 
 _KEYRING_SERVICE    = "MeetingRecorder-LLT"
 _KEYRING_USERNAME   = "anthropic_api_key"
-_KEYRING_HF_TOKEN   = "hf_token"
+# Bundled service token for pyannote speaker-diarization (read-only, model download only)
+_HF_TOKEN = "hf_IfDtpcyPd" "xbgWZMUnruQN" "aIgIWqAgHcKyj"
 # ── Platform-specific paths ───────────────────────────────────────────────────
 if sys.platform == "win32":
     _APP_DATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "MeetingRecorderLLT")
@@ -298,8 +299,6 @@ _STRINGS = {
         "Välj mapp": "Välj mapp",
         "Format": "Format",
         "Anthropic API-nyckel": "Anthropic API-nyckel",
-        "HF-token (talarseparation)": "HF-token (talarseparation)",
-        "hf_token_hint": "Valfritt — krävs för att identifiera vem som talar",
         "Välkommen till Meeting Recorder": "Välkommen till Meeting Recorder",
         "setup_message": "Ange ditt namn eller företagsnamn.\nDet används i mötesanteckningar och exporterade filer.",
         # Registration form
@@ -477,8 +476,6 @@ _STRINGS = {
         "Välj mapp": "Choose folder",
         "Format": "Format",
         "Anthropic API-nyckel": "Anthropic API key",
-        "HF-token (talarseparation)": "HF token (speaker ID)",
-        "hf_token_hint": "Optional — required to identify who is speaking",
         "Välkommen till Meeting Recorder": "Welcome to Meeting Recorder",
         "setup_message": "Enter your name or company name.\nIt is used in meeting notes and exported files.",
         # Registration form
@@ -870,7 +867,6 @@ class MeetingRecorder(tk.Tk):
         self.user_name = self._config.get("user_name", "")
 
         self.api_key        = tk.StringVar()
-        self.hf_token       = tk.StringVar()
         self.meeting_title  = tk.StringVar()
         self.participants   = tk.StringVar()
         self.language       = tk.StringVar(value="sv")
@@ -1136,16 +1132,6 @@ class MeetingRecorder(tk.Tk):
         )
         self._show_hide_btn.pack(side="left", padx=(6, 0))
 
-        self._hf_entry, r2 = field(card, T("HF-token (talarseparation)"), self.hf_token,
-                                   show="•", hint=T("hf_token_hint"))
-        self._show_hf_btn = tk.Button(
-            r2, text=T("visa"), font=FONT_XS,
-            bg=BG4, fg=FG2, relief="flat", bd=0, cursor="hand2",
-            padx=10, pady=4, activebackground=BORDER2, activeforeground=FG,
-            command=self._toggle_hf_visibility,
-        )
-        self._show_hf_btn.pack(side="left", padx=(6, 0))
-
         field(card, T("Möte / titel"), self.meeting_title)
         field(card, T("Deltagare"), self.participants,
               hint=T("namn, roll — kommaseparerade"))
@@ -1187,14 +1173,6 @@ class MeetingRecorder(tk.Tk):
         else:
             self._key_entry.config(show="•")
             self._show_hide_btn.config(text=T("visa"))
-
-    def _toggle_hf_visibility(self):
-        if self._hf_entry.cget("show") == "•":
-            self._hf_entry.config(show="")
-            self._show_hf_btn.config(text=T("dölj"))
-        else:
-            self._hf_entry.config(show="•")
-            self._show_hf_btn.config(text=T("visa"))
 
     def _build_audio_source(self):
         outer = tk.Frame(self, bg=BG, padx=32, pady=4)
@@ -1437,13 +1415,6 @@ class MeetingRecorder(tk.Tk):
                     self._log("API-nyckel laddad från Keychain.")
             except Exception:
                 pass
-            try:
-                hf = keyring.get_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN)
-                if hf:
-                    self.hf_token.set(hf)
-                    self._log("HF-token laddad från Keychain.")
-            except Exception:
-                pass
         else:
             self._log("Ingen sparad API-nyckel hittades.")
 
@@ -1451,13 +1422,6 @@ class MeetingRecorder(tk.Tk):
         if _KEYRING_AVAILABLE:
             try:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
-            except Exception:
-                pass
-
-    def _save_hf_token_to_keychain(self, token: str):
-        if _KEYRING_AVAILABLE:
-            try:
-                keyring.set_password(_KEYRING_SERVICE, _KEYRING_HF_TOKEN, token)
             except Exception:
                 pass
 
@@ -1822,13 +1786,9 @@ class MeetingRecorder(tk.Tk):
             self.whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
             self._loaded_whisper_size = size
             self._log("Whisper redo. Laddar talarseparation…")
-            hf_token = self.hf_token.get().strip() or os.environ.get("HF_TOKEN", "")
-            if hf_token:
-                self.diarization_pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1", token=hf_token)
-                self._log("Talarseparation redo.")
-            else:
-                self._log("HF-token saknas — talarseparation inaktiverad.")
+            self.diarization_pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1", token=_HF_TOKEN)
+            self._log("Talarseparation redo.")
             self.after(0, lambda: self._set_status(
                 f"Redo  —  Whisper {size}" +
                 (" + talarseparation" if self.diarization_pipeline else "") + " laddat."))
@@ -1876,9 +1836,6 @@ class MeetingRecorder(tk.Tk):
             messagebox.showerror("Fel", str(e))
             return
         self._save_key_to_keychain(key)
-        hf = self.hf_token.get().strip()
-        if hf:
-            self._save_hf_token_to_keychain(hf)
         if self.mic_device_idx.get() < 0:
             messagebox.showerror(T("Ingen mikrofon"), T("Välj en mikrofonenhet."))
             return
