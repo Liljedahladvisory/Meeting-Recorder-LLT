@@ -24,6 +24,7 @@ ACCENT  = "#E8690A"
 PACKAGES = [
     ("faster-whisper",  "Whisper (tal-till-text)",           0.40),
     ("pyannote.audio",  "Pyannote (talaridentifiering)",     0.60),
+    ("soundfile",       "SoundFile (ljudläsning)",           0.65),
     ("sounddevice",     "Sounddevice (ljudinspelning)",      0.68),
     ("numpy",           "NumPy (beräkningsbibliotek)",       0.74),
     ("anthropic",       "Anthropic (Claude AI)",             0.82),
@@ -49,7 +50,7 @@ def _run_with_tk(python_path: str, tk) -> None:
     root.configure(bg=BG)
     root.resizable(False, False)
 
-    w, h = 500, 270
+    w, h = 500, 340
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
@@ -83,10 +84,40 @@ def _run_with_tk(python_path: str, tk) -> None:
         root.update_idletasks()
 
     # ── Footer ──────────────────────────────────────────────────────────
-    tk.Label(root,
+    footer_label = tk.Label(root,
              text="Detta sker bara en gång. Stäng inte fönstret.",
              font=("Helvetica Neue", 9, "italic"),
-             fg=FG_DIM, bg=BG).pack(pady=(14, 0))
+             fg=FG_DIM, bg=BG)
+    footer_label.pack(pady=(14, 0))
+
+    # ── Done message (hidden until install finishes) ──────────────────
+    done_frame = tk.Frame(root, bg=BG)
+
+    tk.Label(done_frame,
+             text="Första gången appen startar kan det ta en extra stund\n"
+                  "eftersom AI-modeller laddas ner i bakgrunden.",
+             font=("Helvetica Neue", 10),
+             fg=FG2, bg=BG, justify="center").pack(pady=(8, 12))
+
+    # Use Frame+Label — tk.Button ignores bg on macOS native rendering
+    btn_outer = tk.Frame(done_frame, bg="#E8510A", cursor="hand2")
+    btn_outer.pack()
+    start_btn = tk.Label(btn_outer, text="  Starta appen  ",
+                         font=("Helvetica Neue", 12, "bold"),
+                         fg="#FFFFFF", bg="#E8510A",
+                         padx=16, pady=8, cursor="hand2")
+    start_btn.pack()
+    def _on_enter(e): btn_outer.config(bg="#C94208"); start_btn.config(bg="#C94208")
+    def _on_leave(e): btn_outer.config(bg="#E8510A"); start_btn.config(bg="#E8510A")
+    def _on_click(e): root.destroy()
+    for w in (btn_outer, start_btn):
+        w.bind("<Enter>", _on_enter)
+        w.bind("<Leave>", _on_leave)
+        w.bind("<Button-1>", _on_click)
+
+    def _show_done_message():
+        footer_label.pack_forget()
+        done_frame.pack(pady=(6, 0))
 
     # ── Worker thread ────────────────────────────────────────────────────
     result = {"error": None}
@@ -116,8 +147,8 @@ def _run_with_tk(python_path: str, tk) -> None:
                     check=True, capture_output=True,
                 )
 
-            root.after(0, set_progress, 1.0, "Klar!")
-            root.after(1200, root.destroy)
+            root.after(0, set_progress, 1.0, "Installation klar!")
+            root.after(0, _show_done_message)
 
         except subprocess.CalledProcessError as exc:
             result["error"] = exc.stderr.decode(errors="replace") if exc.stderr else str(exc)

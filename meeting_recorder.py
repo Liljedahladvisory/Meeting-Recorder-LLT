@@ -26,7 +26,18 @@ if sys.platform == "darwin":
             _info["CFBundleName"] = _APP_NAME
             _info["CFBundleDisplayName"] = _APP_NAME
 
-        # 4) Dock icon — look for .icns next to script or inside .app/Resources
+        # 4) Dock icon — deferred until after tk.Tk() to avoid creating
+        #    NSApplication singleton before Tk can set up TKApplication.
+        #    (On macOS 26, early sharedApplication() prevents isa-swizzle.)
+    except Exception:
+        pass
+
+def _set_macos_dock_icon():
+    """Set Dock icon. Call AFTER tk.Tk() so NSApp is already TKApplication."""
+    if sys.platform != "darwin":
+        return
+    try:
+        from AppKit import NSApplication, NSImage
         _app = NSApplication.sharedApplication()
         _script_dir = os.path.dirname(os.path.abspath(__file__))
         for _candidate in [
@@ -45,6 +56,70 @@ if sys.platform == "darwin":
 
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog, ttk
+
+# ── Fix Tk crash on macOS 26 (Tahoe) ────────────────────────────────────────
+# Homebrew Tk 8.6/9.0 adds an [NSApplication macOSVersion] category method that
+# crashes on macOS 26+.  We replace it with a safe implementation AFTER tkinter
+# has loaded (so the category is already registered) but BEFORE tk.Tk() triggers
+# the crash in GetRGBA → macOSVersion.
+if sys.platform == "darwin":
+    try:
+        _objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+
+        _objc.objc_getClass.restype = ctypes.c_void_p
+        _objc.objc_getClass.argtypes = [ctypes.c_char_p]
+
+        _objc.sel_registerName.restype = ctypes.c_void_p
+        _objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        _objc.class_replaceMethod.restype = ctypes.c_void_p
+        _objc.class_replaceMethod.argtypes = [
+            ctypes.c_void_p,  # cls
+            ctypes.c_void_p,  # sel
+            ctypes.c_void_p,  # imp
+            ctypes.c_char_p,  # types
+        ]
+
+        # IMP type: long f(id self, SEL _cmd)
+        _IMP_TYPE = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)
+
+        def _safe_macOSVersion(_self, _cmd):
+            """Return the real major macOS version via NSProcessInfo."""
+            try:
+                _objc.objc_msgSend.restype = ctypes.c_void_p
+                _objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+                _pi = _objc.objc_msgSend(
+                    _objc.objc_getClass(b"NSProcessInfo"),
+                    _objc.sel_registerName(b"processInfo"),
+                )
+                # operatingSystemVersion returns struct {long major, minor, patch}
+                class _OSVersion(ctypes.Structure):
+                    _fields_ = [("major", ctypes.c_long),
+                                ("minor", ctypes.c_long),
+                                ("patch", ctypes.c_long)]
+                _objc.objc_msgSend.restype = _OSVersion
+                _ver = _objc.objc_msgSend(_pi, _objc.sel_registerName(b"operatingSystemVersion"))
+                return _ver.major
+            except Exception:
+                return 15  # safe fallback
+
+        # prevent GC of the callback
+        _macOSVersion_imp = _IMP_TYPE(_safe_macOSVersion)
+
+        _ns_app_cls = _objc.objc_getClass(b"NSApplication")
+        _sel = _objc.sel_registerName(b"macOSVersion")
+
+        if _ns_app_cls and _sel:
+            _objc.class_replaceMethod(
+                _ns_app_cls,
+                _sel,
+                ctypes.cast(_macOSVersion_imp, ctypes.c_void_p),
+                b"l@:",
+            )
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 import threading
 import queue
 import os
@@ -1779,6 +1854,23 @@ class MeetingRecorder(tk.Tk):
         self.after(0, lambda: self._set_rec_btn_enabled(False))
         try:
             from faster_whisper import WhisperModel
+            # Patch torchaudio for speechbrain compat (list_audio_backends
+            # was removed in torchaudio 2.6+)
+            try:
+                import torchaudio
+                if not hasattr(torchaudio, "list_audio_backends"):
+                    torchaudio.list_audio_backends = lambda: ["default"]
+            except ImportError:
+                pass
+
+            # ── torchcodec shim ──────────────────────────────────────────
+            # pyannote.audio 4.x uses torchcodec's AudioDecoder for audio
+            # I/O, but torchcodec needs system ffmpeg libs (libavutil etc.)
+            # which aren't present on a clean Mac.  We provide a drop-in
+            # replacement backed by torchaudio so diarization works without
+            # ffmpeg.
+            self._install_torchcodec_shim()
+
             from pyannote.audio import Pipeline
             self._log(f"Förladdar Whisper {size}…")
             self.after(0, lambda: self._set_status(
@@ -1799,6 +1891,161 @@ class MeetingRecorder(tk.Tk):
             self.after(0, lambda: self._set_status("Redo (whisper ej förladdad)"))
         finally:
             self.after(0, lambda: self._set_rec_btn_enabled(True))
+
+    def _install_torchcodec_shim(self):
+        """Replace torchcodec AudioDecoder with a torchaudio-backed shim.
+
+        pyannote.audio 4.x imports AudioDecoder from torchcodec which needs
+        system ffmpeg libraries.  This shim provides the same API using
+        torchaudio (which is already installed and works on clean Macs).
+        """
+        import dataclasses, types, torch, torchaudio
+        import soundfile as _sf  # used for metadata (torchaudio.info removed in 2.11)
+
+        # ── AudioSamples ─────────────────────────────────────────────
+        @dataclasses.dataclass
+        class _AudioSamples:
+            data: torch.Tensor          # (channels, samples)
+            pts_seconds: float
+            duration_seconds: float
+            sample_rate: int
+
+            def __iter__(self):
+                yield self.data
+                yield self.pts_seconds
+                yield self.duration_seconds
+                yield self.sample_rate
+
+        # ── AudioStreamMetadata ──────────────────────────────────────
+        @dataclasses.dataclass
+        class _AudioStreamMetadata:
+            sample_rate: int = 0
+            num_channels: int = 0
+            sample_format: str = "fltp"
+            duration_seconds_from_header: float = 0.0
+            duration_seconds: float = 0.0
+            begin_stream_seconds_from_header: float = 0.0
+            begin_stream_seconds: float = 0.0
+            bit_rate: float = 0.0
+            codec: str = ""
+            stream_index: int = 0
+
+        # ── AudioDecoder ─────────────────────────────────────────────
+        # Uses soundfile for ALL I/O — avoids torchaudio.load() which
+        # in torchaudio 2.11 internally uses torchcodec → infinite recursion.
+        import numpy as _np
+
+        class _AudioDecoder:
+            def __init__(self, source, *, stream_index=None,
+                         sample_rate=None, num_channels=None):
+                import io as _io, tempfile, os
+                # Handle file-like objects by writing to a temp file
+                self._tmp = None
+                if isinstance(source, (_io.RawIOBase, _io.BufferedIOBase)):
+                    pos = source.tell() if hasattr(source, 'tell') else 0
+                    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                    tmp.write(source.read())
+                    tmp.close()
+                    self._tmp = tmp.name
+                    source = tmp.name
+                    try:
+                        source_obj = getattr(source, 'seek', None)
+                        if source_obj:
+                            source_obj(pos)
+                    except Exception:
+                        pass
+                self._source = str(source)
+                self._target_sr = sample_rate
+                self._target_ch = num_channels
+                self.stream_index = stream_index or 0
+                # Load metadata via soundfile
+                _sfinfo = _sf.info(self._source)
+                self._native_sr = _sfinfo.samplerate
+                self._native_ch = _sfinfo.channels
+                dur = _sfinfo.frames / _sfinfo.samplerate if _sfinfo.samplerate else 0
+                self.metadata = _AudioStreamMetadata(
+                    sample_rate=_sfinfo.samplerate,
+                    num_channels=_sfinfo.channels,
+                    duration_seconds_from_header=dur,
+                    duration_seconds=dur,
+                )
+
+            def _load_sf(self, start=0, stop=None):
+                """Load audio via soundfile → torch tensor (channels, samples)."""
+                data, sr = _sf.read(self._source, start=start, stop=stop,
+                                    dtype="float32", always_2d=True)
+                # soundfile returns (samples, channels) → transpose
+                waveform = torch.from_numpy(data.T)  # (channels, samples)
+                return waveform, sr
+
+            def _resample(self, waveform, orig_sr):
+                sr = self._target_sr or orig_sr
+                ch = self._target_ch or waveform.shape[0]
+                if waveform.shape[0] != ch:
+                    if ch == 1:
+                        waveform = waveform.mean(dim=0, keepdim=True)
+                    else:
+                        waveform = waveform[:ch]
+                if orig_sr != sr:
+                    waveform = torchaudio.functional.resample(
+                        waveform, orig_sr, sr)
+                return waveform, sr
+
+            def get_all_samples(self):
+                waveform, sr = self._load_sf()
+                waveform, sr = self._resample(waveform, sr)
+                dur = waveform.shape[1] / sr if sr else 0
+                return _AudioSamples(
+                    data=waveform, pts_seconds=0.0,
+                    duration_seconds=dur, sample_rate=sr)
+
+            def get_samples_played_in_range(self, start_seconds=0.0,
+                                            stop_seconds=None):
+                native_sr = self._native_sr
+                start_frame = int(start_seconds * native_sr)
+                stop_frame = int(stop_seconds * native_sr) if stop_seconds is not None else None
+                waveform, sr = self._load_sf(start=start_frame, stop=stop_frame)
+                waveform, sr = self._resample(waveform, sr)
+                dur = waveform.shape[1] / sr if sr else 0
+                return _AudioSamples(
+                    data=waveform, pts_seconds=start_seconds,
+                    duration_seconds=dur, sample_rate=sr)
+
+            def __del__(self):
+                if self._tmp:
+                    import os
+                    try:
+                        os.unlink(self._tmp)
+                    except Exception:
+                        pass
+
+        # ── Patch torchcodec modules ─────────────────────────────────
+        import sys
+
+        # Create/patch the torchcodec modules so pyannote finds our shim
+        tc = types.ModuleType("torchcodec")
+        tc.AudioSamples = _AudioSamples
+        tc_decoders = types.ModuleType("torchcodec.decoders")
+        tc_decoders.AudioDecoder = _AudioDecoder
+        tc_decoders.AudioStreamMetadata = _AudioStreamMetadata
+        tc_metadata = types.ModuleType("torchcodec._core._metadata")
+        tc_metadata.AudioStreamMetadata = _AudioStreamMetadata
+        tc_core = types.ModuleType("torchcodec._core")
+        tc_core._metadata = tc_metadata
+
+        sys.modules["torchcodec"] = tc
+        sys.modules["torchcodec.decoders"] = tc_decoders
+        sys.modules["torchcodec._core"] = tc_core
+        sys.modules["torchcodec._core._metadata"] = tc_metadata
+
+        # Also patch pyannote's io module if already imported
+        io_mod = sys.modules.get("pyannote.audio.core.io")
+        if io_mod:
+            io_mod.AudioDecoder = _AudioDecoder
+            io_mod.AudioSamples = _AudioSamples
+            io_mod.AudioStreamMetadata = _AudioStreamMetadata
+
+        self._log("torchcodec-shim installerad (torchaudio-backend).")
 
     def _load_whisper(self):
         size = self.whisper_size.get()
@@ -1958,13 +2205,18 @@ class MeetingRecorder(tk.Tk):
 
     def _transcription_worker(self):
         while True:
-            item = self.transcription_queue.get()
-            if item is None:
-                break
-            chunk, idx = item
-            self._transcribe_chunk(chunk, idx)
-            self.pending_transcriptions -= 1
-            self.after(0, self._update_pending_status)
+            try:
+                item = self.transcription_queue.get()
+                if item is None:
+                    break
+                chunk, idx = item
+                self._transcribe_chunk(chunk, idx)
+                self.pending_transcriptions -= 1
+                self.after(0, self._update_pending_status)
+            except Exception as e:
+                self._log(f"Worker-fel: {e}")
+                import traceback
+                traceback.print_exc()
 
     # ── Transcription + diarization ───────────────────────────────────────────
 
@@ -2028,10 +2280,18 @@ class MeetingRecorder(tk.Tk):
                     self._log(f"Diarisering med {n_speakers} kända talare.")
 
             diarization_kw = {"num_speakers": n_speakers} if n_speakers else {}
-            diarization = self.diarization_pipeline(fname, **diarization_kw)
+
+            # Load audio ourselves so pyannote never touches torchcodec/AudioDecoder
+            import torch, torchaudio
+            waveform, sample_rate = torchaudio.load(fname)
+            audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+            raw_result = self.diarization_pipeline(audio_input, **diarization_kw)
+            # pyannote 4.x returns DiarizeOutput; 3.x returns Annotation directly
+            annotation = getattr(raw_result, "speaker_diarization", raw_result)
             turns = sorted(
                 [(t.start, t.end, spk)
-                 for t, _, spk in diarization.itertracks(yield_label=True)],
+                 for t, _, spk in annotation.itertracks(yield_label=True)],
                 key=lambda x: x[0])
 
             def find_speaker(t: float) -> str:
@@ -2414,7 +2674,7 @@ class MeetingRecorder(tk.Tk):
 
 # ── Webhook URL for admin notifications ──────────────────────────────────────
 # Replace with your Google Apps Script web app URL after setup
-_ADMIN_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxFxWDU5khMonP3qsTtl2nG5BrFP-wWuit8kAHqQ-c2X8lJbyFr7ytuj6LtRfw0s2-f/exec"
+_ADMIN_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyI501-FMtA6AYOc8D42XKEssKv6aI25fn47w8lRsE1KVhR-ZfZ7ITnF9_ZzHJErCgw/exec"
 _ADMIN_EMAIL = "svante@liljedahladvisory.se"
 
 # ── Revocation list URL (hosted on GitHub) ───────────────────────────────────
@@ -2456,10 +2716,105 @@ def _generate_trial_key(name: str, email: str, company: str = "",
     return "LLT." + ".".join(chunks)
 
 
+def _send_verification_code(email: str, code: str, name: str) -> bool:
+    """Ask the GAS webhook to send a 4-digit verification e-mail to the user.
+    Returns True on success."""
+    import urllib.request, ssl
+    if not _ADMIN_WEBHOOK_URL:
+        return False
+    payload = {
+        "action": "send_verification_email",
+        "email": email,
+        "name": name,
+        "code": code,
+    }
+    try:
+        req = urllib.request.Request(
+            _ADMIN_WEBHOOK_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        # Try with default SSL first, fallback to unverified if certs missing
+        try:
+            urllib.request.urlopen(req, timeout=15)
+        except (ssl.SSLCertVerificationError, ssl.SSLError, OSError):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            urllib.request.urlopen(req, timeout=15, context=ctx)
+        return True
+    except Exception as e:
+        import traceback
+        print(f"[VERIFIERING] Webhook-fel: {e}", flush=True)
+        traceback.print_exc()
+        return False
+
+
+def _show_verification_dialog(parent_root, email: str, expected_code: str) -> bool:
+    """Show a 4-digit code input dialog. Returns True if correct code entered."""
+    dlg = tk.Toplevel(parent_root)
+    dlg.title(T("Verifiera e-postadress"))
+    dlg.configure(bg=BG2)
+    dlg.resizable(False, False)
+    w, h = 420, 280
+    sx = parent_root.winfo_screenwidth()
+    sy = parent_root.winfo_screenheight()
+    dlg.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    dlg.transient(parent_root)
+    dlg.grab_set()
+    dlg.lift()
+    dlg.focus_force()
+
+    result = [False]
+
+    inner = tk.Frame(dlg, bg=BG2, padx=36, pady=28)
+    inner.pack(fill="both", expand=True)
+
+    tk.Label(inner, text="✉️ " + T("Verifiera din e-postadress"),
+             font=("Helvetica Neue", 15, "bold"), bg=BG2, fg=FG
+             ).pack(pady=(0, 8))
+
+    tk.Label(inner,
+             text=T("Vi har skickat en 4-siffrig kod till") + f"\n{email}",
+             font=FONT_S, bg=BG2, fg=FG2, justify="center"
+             ).pack(pady=(0, 16))
+
+    code_var = tk.StringVar()
+    code_entry = tk.Entry(inner, textvariable=code_var,
+                          font=("Helvetica Neue", 28, "bold"),
+                          width=6, justify="center",
+                          bg=BG, fg=FG, insertbackground=FG,
+                          relief="solid", bd=1,
+                          highlightbackground=BORDER, highlightcolor=ACCENT)
+    code_entry.pack()
+    code_entry.focus_set()
+
+    err_label = tk.Label(inner, text="", font=FONT_S, bg=BG2, fg=RED)
+    err_label.pack(pady=(8, 0))
+
+    def verify():
+        entered = code_var.get().strip()
+        if entered == expected_code:
+            result[0] = True
+            dlg.destroy()
+        else:
+            err_label.config(text=T("Fel kod. Försök igen."))
+            code_entry.delete(0, "end")
+            code_entry.focus_set()
+
+    code_entry.bind("<Return>", lambda e: verify())
+
+    RoundedButton(inner, text=T("Verifiera"), style="primary",
+                  padx=24, pady=10, command=verify).pack(pady=(14, 0))
+
+    dlg.wait_window()
+    return result[0]
+
+
 def _notify_admin(reg_data: dict):
     """Send registration data to admin via webhook (fire-and-forget)."""
-    import urllib.request
-    import urllib.error
+    import urllib.request, ssl
 
     # Method 1: Webhook (if configured)
     if _ADMIN_WEBHOOK_URL:
@@ -2470,9 +2825,16 @@ def _notify_admin(reg_data: dict):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=10)
+            try:
+                urllib.request.urlopen(req, timeout=10)
+            except (ssl.SSLCertVerificationError, ssl.SSLError, OSError):
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                urllib.request.urlopen(req, timeout=10, context=ctx)
             return
-        except Exception:
+        except Exception as e:
+            print(f"[ADMIN] Webhook-fel: {e}", flush=True)
             pass
 
     # Method 2: Fallback — save registration to local file for admin review
@@ -2489,9 +2851,9 @@ def _notify_admin(reg_data: dict):
         json.dump(existing, f, indent=2, ensure_ascii=False)
 
 
-def _show_registration_window() -> bool:
+def _show_registration_window(master=None) -> bool:
     """Show registration form for new users. Returns True if registered."""
-    root = tk.Tk()
+    root = tk.Toplevel(master) if master else tk.Tk()
     root.title(T("reg_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
@@ -2500,6 +2862,12 @@ def _show_registration_window() -> bool:
     sx = root.winfo_screenwidth()
     sy = root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    root.lift()
+    root.attributes("-topmost", True)
+    root.focus_force()
+    root.after(200, lambda: root.attributes("-topmost", False))
+    if not master:
+        root.after(300, _set_macos_dock_icon)
 
     registered = [False]
 
@@ -2546,6 +2914,7 @@ def _show_registration_window() -> bool:
     msg_label.pack(fill="x", pady=(10, 8))
 
     def do_register():
+        import random, threading
         name = fields["name"].get().strip()
         company = fields["company"].get().strip()
         address = fields["address"].get().strip()
@@ -2562,6 +2931,39 @@ def _show_registration_window() -> bool:
         if not email or "@" not in email:
             msg_label.config(text=T("reg_fill_email"), fg=RED)
             return
+
+        # ── Step 1: Send verification code (in thread — keeps UI alive) ─
+        code = f"{random.randint(0, 9999):04d}"
+        msg_label.config(text=T("Skickar verifieringskod..."), fg=FG_DIM)
+        root.update()
+
+        send_result = [None]  # None=pending, True=ok, False=failed
+        def _send():
+            send_result[0] = _send_verification_code(email, code, name)
+        t = threading.Thread(target=_send, daemon=True)
+        t.start()
+        # Wait up to 20s while keeping UI responsive
+        deadline = 200  # 200 × 100ms = 20s
+        while send_result[0] is None and deadline > 0:
+            root.update()
+            root.after(100)
+            deadline -= 1
+
+        if not send_result[0]:
+            # Webhook unreachable — ask admin to forward code manually
+            msg_label.config(
+                text="⚠️ " + T("Kunde inte nå servern. Kontakta support@liljedahladvisory.se"),
+                fg=RED)
+            root.update()
+            return
+        else:
+            # ── Step 2: Show verification dialog ─────────────────────
+            msg_label.config(text="", fg=FG_DIM)
+            root.update()
+            verified = _show_verification_dialog(root, email, code)
+            if not verified:
+                msg_label.config(text=T("Verifiering avbruten."), fg=RED)
+                return
 
         msg_label.config(text=T("Registrerar..."), fg=FG_DIM)
         root.update()
@@ -2588,7 +2990,6 @@ def _show_registration_window() -> bool:
         }
 
         # Notify admin (in background thread)
-        import threading
         threading.Thread(target=_notify_admin, args=(reg_data,), daemon=True).start()
 
         msg_label.config(
@@ -2613,16 +3014,17 @@ def _show_registration_window() -> bool:
     ).pack(side="right")
 
     root._go_activate = False
-    root.mainloop()
+    root.wait_window()
 
     if getattr(root, '_go_activate', False):
-        return _show_activation_window()
+        return _show_activation_window(master)
     return registered[0]
 
 
-def _show_activation_window() -> bool:
+def _show_activation_window(master=None) -> bool:
     """Show a license activation window. Returns True if activated."""
-    root = tk.Tk()
+    root = tk.Toplevel(master) if master else tk.Tk()
+    _set_macos_dock_icon()
     root.title(T("act_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
@@ -2631,6 +3033,10 @@ def _show_activation_window() -> bool:
     sx = root.winfo_screenwidth()
     sy = root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    root.lift()
+    root.attributes("-topmost", True)
+    root.focus_force()
+    root.after(200, lambda: root.attributes("-topmost", False))
 
     activated = [False]
 
@@ -2687,13 +3093,14 @@ def _show_activation_window() -> bool:
         padx=28, pady=10, command=root.destroy,
     ).pack(side="right")
 
-    root.mainloop()
+    root.wait_window()
     return activated[0]
 
 
-def _show_expired_window(message: str) -> bool:
+def _show_expired_window(message: str, master=None) -> bool:
     """Show license expired window with option to re-enter key."""
-    root = tk.Tk()
+    root = tk.Toplevel(master) if master else tk.Tk()
+    _set_macos_dock_icon()
     root.title(T("exp_title"))
     root.configure(bg=BG2)
     root.resizable(False, False)
@@ -2702,6 +3109,10 @@ def _show_expired_window(message: str) -> bool:
     sx = root.winfo_screenwidth()
     sy = root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    root.lift()
+    root.attributes("-topmost", True)
+    root.focus_force()
+    root.after(200, lambda: root.attributes("-topmost", False))
 
     reactivate = [False]
 
@@ -2737,25 +3148,30 @@ def _show_expired_window(message: str) -> bool:
         padx=24, pady=10, command=root.destroy,
     ).pack(side="right")
 
-    root.mainloop()
+    root.wait_window()
     return reactivate[0]
 
 
-def _show_language_selection_window():
+def _show_language_selection_window(master=None):
     """Show a one-time language selection dialog. Returns the chosen language code."""
-    root = tk.Tk()
-    root.title(T("lang_dialog_title"))
-    root.configure(bg=BG2)
-    root.resizable(False, False)
+    win = tk.Toplevel(master) if master else tk.Tk()
+    _set_macos_dock_icon()
+    win.title(T("lang_dialog_title"))
+    win.configure(bg=BG2)
+    win.resizable(False, False)
 
     w, h = 380, 220
-    sx = root.winfo_screenwidth()
-    sy = root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    sx = win.winfo_screenwidth()
+    sy = win.winfo_screenheight()
+    win.geometry(f"{w}x{h}+{(sx-w)//2}+{(sy-h)//2}")
+    win.lift()
+    win.attributes("-topmost", True)
+    win.focus_force()
+    win.after(200, lambda: win.attributes("-topmost", False))
 
     chosen = [_LANG]
 
-    inner = tk.Frame(root, bg=BG2, padx=40, pady=30)
+    inner = tk.Frame(win, bg=BG2, padx=40, pady=30)
     inner.pack(fill="both", expand=True)
 
     tk.Label(inner, text="Meeting Recorder LLT",
@@ -2772,7 +3188,7 @@ def _show_language_selection_window():
     def pick(lang):
         chosen[0] = lang
         set_lang(lang)
-        root.destroy()
+        win.destroy()
 
     RoundedButton(
         btn_row, text=T("lang_btn_sv"), style="solid", bg=ACCENT,
@@ -2784,7 +3200,7 @@ def _show_language_selection_window():
         padx=20, pady=10, command=lambda: pick("en"),
     ).pack(side="left")
 
-    root.mainloop()
+    win.wait_window()
     return chosen[0]
 
 
@@ -2798,9 +3214,15 @@ def _main():
     cfg = load_config()
     set_lang(cfg.get("language", "sv"))
 
+    # ── Single hidden root — prevents extra dock bounces ─────────────
+    # All pre-app dialogs (language, registration, activation) use
+    # Toplevel on this root so only ONE tk.Tk() exists before the main app.
+    _pre_root = tk.Tk()
+    _pre_root.withdraw()
+
     # ── First-run language selection ─────────────────────────────────
     if is_first_run:
-        chosen_lang = _show_language_selection_window()
+        chosen_lang = _show_language_selection_window(_pre_root)
         cfg["language"] = chosen_lang
         save_config(cfg)
 
@@ -2809,31 +3231,37 @@ def _main():
 
     if not valid and os.path.isfile(LICENSE_PATH):
         # License exists but expired/invalid
-        if _show_expired_window(msg):
-            if not _show_activation_window():
+        if _show_expired_window(msg, _pre_root):
+            if not _show_activation_window(_pre_root):
+                _pre_root.destroy()
                 return
             valid, msg, payload = _check_license_file()
             if not valid:
+                _pre_root.destroy()
                 return
         else:
+            _pre_root.destroy()
             return
 
     if not valid and not os.path.isfile(LICENSE_PATH):
         # No license at all — show registration form (new user)
-        if not _show_registration_window():
+        if not _show_registration_window(_pre_root):
+            _pre_root.destroy()
             return
         valid, msg, payload = _check_license_file()
         if not valid:
+            _pre_root.destroy()
             return
 
     # ── Revocation check (non-blocking — allows offline use) ──────────
     if valid and payload:
         user_email = payload.get("email", "")
         if user_email and _check_revocation(user_email):
-            _show_expired_window(T("revoked_msg"))
+            _show_expired_window(T("revoked_msg"), _pre_root)
+            _pre_root.destroy()
             return
-    # ─────────────────────────────────────────────────────────────────────
 
+    _pre_root.destroy()  # Done with pre-app phase — destroy hidden root
     app = MeetingRecorder()
 
     # Check for updates in background (non-blocking)
